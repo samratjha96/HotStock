@@ -207,7 +207,7 @@ function renderParticipantsTable(participants, canEdit) {
 					.map(
 						(p, i) => `
           <tr class="${i === 0 && p.percent_change !== null ? "rank-1" : ""}">
-            <td>${i + 1}</td>
+            <td><span class="rank-cell">${i + 1}</span></td>
             <td>${escapeHtml(p.name)}</td>
             <td><span class="ticker-symbol">${escapeHtml(p.ticker)}</span></td>
             <td>${p.baseline_price ? `$${p.baseline_price.toFixed(2)}` : "—"}</td>

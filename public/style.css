@@ -374,7 +374,13 @@ main {
 .participants-table td:first-child {
 	font-weight: 700;
 	color: var(--text-muted);
-	width: 50px;
+	width: 70px;
+}
+
+.rank-cell {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
 }
 
 /* Winner row - rank 1 */
@@ -387,17 +393,17 @@ main {
 	font-size: 1.1rem;
 }
 
-.rank-1 td:first-child::before {
-	content: "🥇 ";
+.rank-1 .rank-cell::before {
+	content: "🥇";
 }
 
 /* Podium styling */
-.participants-table tbody tr:nth-child(2) td:first-child::before {
-	content: "🥈 ";
+.participants-table tbody tr:nth-child(2) .rank-cell::before {
+	content: "🥈";
 }
 
-.participants-table tbody tr:nth-child(3) td:first-child::before {
-	content: "🥉 ";
+.participants-table tbody tr:nth-child(3) .rank-cell::before {
+	content: "🥉";
 }
 
 .gain {
