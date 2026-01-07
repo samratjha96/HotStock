@@ -3,14 +3,14 @@
 Started: 2026-01-07
 
 ## Status
-Rate limiting middleware implemented. Next: ownership verification for participant updates.
+Ownership verification complete. Next: input validation on string inputs.
 
 ## Done When Checklist
 - [x] Biome installed and configured with lint + format scripts
 - [x] `bunx biome check .` passes with no errors
 - [x] All unused code removed
 - [x] Rate limiting middleware active on all endpoints
-- [ ] PUT `/api/participants/:id` has ownership verification
+- [x] PUT `/api/participants/:id` has ownership verification
 - [ ] Input validation on all string inputs (max length)
 - [ ] All SQL queries verified as parameterized
 - [ ] `docker compose build && docker compose up` works
@@ -47,3 +47,17 @@ Rate limiting middleware implemented. Next: ownership verification for participa
 - Returns JSON error message on rate limit exceeded
 - Verified Docker build still works
 - Committed: 3a22c1a
+
+### 2026-01-07 - Iteration 3: Ownership Verification
+- Added name verification to PUT /api/participants/:id endpoint
+- Now requires 'name' field in request body for ownership proof
+- Returns 403 Forbidden if name doesn't match (case-insensitive comparison)
+- Updated frontend edit modal with name verification field
+- Frontend now sends name along with ticker when updating
+- Tested all scenarios:
+  - Update without name → 400 error
+  - Update with wrong name → 403 error  
+  - Update with correct name → success
+  - Update with case-different name → success (case-insensitive)
+- Verified Docker build still works
+- Committed: 49530d4
