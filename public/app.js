@@ -562,9 +562,9 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 			alert("Please select the date when the competition started");
 			return;
 		}
-		// Set start to beginning of that day, end to 1 second later (so pick window is closed)
-		const startDate = new Date(backfillDate);
-		startDate.setHours(0, 0, 0, 0);
+		// Set start to beginning of that day in local time, end to 1 second later (so pick window is closed)
+		// Parse as local time by appending T00:00:00 (without Z suffix)
+		const startDate = new Date(`${backfillDate}T00:00:00`);
 		const endDate = new Date(startDate.getTime() + 1000);
 
 		data = {
