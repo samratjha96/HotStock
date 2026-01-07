@@ -86,6 +86,15 @@ function formatDate(isoString) {
 	});
 }
 
+// Format date without time (for backfill competitions)
+function formatDateOnly(isoString) {
+	return new Date(isoString).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
 // Get competition status
 function getStatus(competition) {
 	// Past competitions have special status handling
@@ -183,7 +192,7 @@ async function renderCompetitionDetail(slug) {
 
 	// Show baseline date info for past competitions
 	const baselineInfo = comp.is_backfill
-		? `<p class="backfill-info">Prices from: ${formatDate(comp.pick_window_start)}</p>`
+		? `<p class="backfill-info">Prices from: ${formatDateOnly(comp.pick_window_start)}</p>`
 		: "";
 
 	competitionDetail.innerHTML = `
@@ -561,15 +570,15 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 			alert("Please select the date when the competition started");
 			return;
 		}
-		// Set start to beginning of that day in local time, end to 1 second later (so pick window is closed)
-		// Parse as local time by appending T00:00:00 (without Z suffix)
-		const startDate = new Date(`${backfillDate}T00:00:00`);
-		const endDate = new Date(startDate.getTime() + 1000);
+		// Store as UTC midnight on the selected date
+		// backfillDate is "YYYY-MM-DD", append Z to make it UTC
+		const startDateUTC = `${backfillDate}T00:00:00.000Z`;
+		const endDateUTC = `${backfillDate}T00:00:01.000Z`;
 
 		data = {
 			name: document.getElementById("comp-name").value,
-			pick_window_start: startDate.toISOString(),
-			pick_window_end: endDate.toISOString(),
+			pick_window_start: startDateUTC,
+			pick_window_end: endDateUTC,
 			backfill_mode: true,
 		};
 	} else {
