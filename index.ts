@@ -209,8 +209,8 @@ app.post("/api/competitions/:slugOrId/join", async (c) => {
 
   const id = generateId();
   db.run(
-    `INSERT INTO participants (id, competition_id, name, ticker, current_price) VALUES (?, ?, ?, ?, ?)`,
-    [id, competition.id, name, ticker.toUpperCase(), currentPrice]
+    `INSERT INTO participants (id, competition_id, name, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, competition.id, name, ticker.toUpperCase(), currentPrice, currentPrice, 0]
   );
 
   const participant = db.query(`SELECT * FROM participants WHERE id = ?`).get(id);
@@ -243,8 +243,8 @@ app.put("/api/participants/:id", async (c) => {
     return c.json({ error: "Participant not found" }, 404);
   }
 
-  if (!isPickWindowOpen(participant)) {
-    return c.json({ error: "Pick window is closed, cannot change ticker" }, 400);
+  if (isCompetitionLocked(participant)) {
+    return c.json({ error: "Competition is locked, cannot change ticker" }, 400);
   }
 
   // Validate ticker
@@ -257,8 +257,8 @@ app.put("/api/participants/:id", async (c) => {
   const currentPrice = await fetchPrice(ticker.toUpperCase());
 
   db.run(
-    `UPDATE participants SET ticker = ?, current_price = ?, pick_date = datetime('now') WHERE id = ?`,
-    [ticker.toUpperCase(), currentPrice, participantId]
+    `UPDATE participants SET ticker = ?, baseline_price = ?, current_price = ?, percent_change = 0, pick_date = datetime('now') WHERE id = ?`,
+    [ticker.toUpperCase(), currentPrice, currentPrice, participantId]
   );
 
   const updated = db.query(`SELECT * FROM participants WHERE id = ?`).get(participantId);
