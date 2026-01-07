@@ -20,7 +20,14 @@ This document provides essential context for AI agents working on this codebase.
 - `bun run index.ts` not `node index.ts`
 - `bun install` not `npm install`
 - `bun test` not `jest` or `vitest`
-- See `CLAUDE.md` for full Bun API guidance
+- `bunx <package>` not `npx <package>`
+- Bun automatically loads `.env` files, so don't use `dotenv`
+
+**Bun Built-in APIs** (don't use Node.js alternatives):
+- `bun:sqlite` for SQLite (not `better-sqlite3`)
+- `Bun.serve()` for HTTP server (not `express` - we use Hono on top of it)
+- `Bun.file()` for file operations (not `node:fs`)
+- `WebSocket` is built-in (not `ws`)
 
 ### 2. Docker Deployment Must Always Work
 After any changes, verify Docker still works:

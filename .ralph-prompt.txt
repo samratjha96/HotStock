@@ -1,0 +1,37 @@
+You are building a project. Make incremental progress toward a working application.
+
+## Context Files
+- project-spec.md: Full specification of what to build
+- ralph-progress.txt: Log of what's been done and what's next
+
+## Your Process
+
+1. **Read context**: Start by reading project-spec.md and ralph-progress.txt to understand the current state
+2. **Identify next step**: Pick the next logical piece of work that moves toward MVP
+3. **Implement**: Write the code. Keep it simple and working.
+4. **Verify**: Ensure the code compiles/runs. Use `bun run build` or `bun run dev` as appropriate.
+5. **Commit**: Make a git commit with a clear message describing what was done
+6. **Log progress**: Append to ralph-progress.txt what you completed and what the logical next step is
+
+## Development Rules
+
+- Use `bun` for all package management (bun install, bun add, bun run)
+- NO TESTS - focus on working features only
+- Keep code simple and readable
+- Commit after each working feature
+- Use subagents (Task tool) for independent parallel work when beneficial
+
+## Completion Signals
+
+When the MVP is fully complete (all checkboxes in project-spec.md done):
+- Append `<promise>COMPLETE</promise>` to ralph-progress.txt
+
+If you get stuck and need human input:
+- Append `<promise>BLOCKED</promise>` followed by a description of what's blocking you to ralph-progress.txt
+
+## Important Notes
+
+- The goal is a WORKING application, not perfect code
+- Prefer simple solutions over clever ones
+- If something is unclear in the spec, make a reasonable decision and document it
+- Docker must work: `docker-compose up` should start the entire app
