@@ -299,9 +299,14 @@ function hideEditModal() {
 	document.getElementById("edit-form").reset();
 }
 
-// Helper to format date for datetime-local input
+// Helper to format date for datetime-local input (must be in local time)
 function formatDateForInput(date) {
-	return date.toISOString().slice(0, 16);
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	const hours = String(date.getHours()).padStart(2, "0");
+	const minutes = String(date.getMinutes()).padStart(2, "0");
+	return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
 // Escape HTML to prevent XSS
