@@ -38,13 +38,6 @@ const API = {
     });
     return res.json();
   },
-
-  async refreshPrices(slugOrId) {
-    const res = await fetch(`/api/competitions/${slugOrId}/refresh-prices`, {
-      method: "POST",
-    });
-    return res.json();
-  },
 };
 
 // State
@@ -152,14 +145,13 @@ async function renderCompetitionDetail(slug) {
         <button id="copy-url-btn" class="btn btn-small btn-secondary">Copy</button>
       </div>
       <div class="action-buttons">
-        ${comp.is_pick_window_open ? '<button id="join-btn" class="btn btn-primary">Join Competition</button>' : ""}
-        <button id="refresh-btn" class="btn btn-success">Refresh Prices</button>
+        ${comp.can_join ? '<button id="join-btn" class="btn btn-primary">Join Competition</button>' : ""}
       </div>
     </div>
 
     <div class="participants-section">
       <h3>Leaderboard</h3>
-      ${renderParticipantsTable(comp.participants, comp.is_pick_window_open)}
+      ${renderParticipantsTable(comp.participants, comp.can_join)}
     </div>
   `;
 
@@ -167,16 +159,6 @@ async function renderCompetitionDetail(slug) {
   const joinBtn = document.getElementById("join-btn");
   if (joinBtn) {
     joinBtn.addEventListener("click", () => showJoinModal());
-  }
-
-  const refreshBtn = document.getElementById("refresh-btn");
-  if (refreshBtn) {
-    refreshBtn.addEventListener("click", async () => {
-      refreshBtn.textContent = "Refreshing...";
-      refreshBtn.disabled = true;
-      await API.refreshPrices(slug);
-      await renderCompetitionDetail(slug);
-    });
   }
 
   const copyBtn = document.getElementById("copy-url-btn");

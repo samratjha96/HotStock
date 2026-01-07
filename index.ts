@@ -8,6 +8,10 @@ import { fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
 
+// Price cache: stores last refresh time per competition
+const priceCache = new Map<string, number>();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // Serve static files from public directory
 app.use("/public/*", serveStatic({ root: "./" }));
 
@@ -45,6 +49,51 @@ function findCompetition(slugOrId: string) {
     pick_window_end: string;
     created_at: string;
   } | null;
+}
+
+// Helper to refresh prices for a competition (with caching)
+async function refreshPricesIfNeeded(competition: { id: string; pick_window_end: string }) {
+  const lastRefresh = priceCache.get(competition.id) || 0;
+  const now = Date.now();
+  
+  if (now - lastRefresh < CACHE_TTL_MS) {
+    return; // Cache still valid
+  }
+  
+  const participants = db.query(`SELECT * FROM participants WHERE competition_id = ?`).all(competition.id) as Array<{
+    id: string;
+    ticker: string;
+    baseline_price: number | null;
+  }>;
+
+  const isLocked = isCompetitionLocked(competition);
+
+  for (const participant of participants) {
+    const price = await fetchPrice(participant.ticker);
+    if (price === null) continue;
+
+    if (isLocked && participant.baseline_price === null) {
+      db.run(
+        `UPDATE participants SET baseline_price = ?, current_price = ?, percent_change = 0 WHERE id = ?`,
+        [price, price, participant.id]
+      );
+    } else if (participant.baseline_price !== null) {
+      const percentChange = ((price - participant.baseline_price) / participant.baseline_price) * 100;
+      db.run(
+        `UPDATE participants SET current_price = ?, percent_change = ? WHERE id = ?`,
+        [price, percentChange, participant.id]
+      );
+    } else {
+      db.run(`UPDATE participants SET current_price = ? WHERE id = ?`, [price, participant.id]);
+    }
+
+    db.run(
+      `INSERT INTO price_history (id, ticker, price) VALUES (?, ?, ?)`,
+      [generateId(), participant.ticker, price]
+    );
+  }
+  
+  priceCache.set(competition.id, now);
 }
 
 // API: List all competitions (only locked ones are public)
@@ -92,7 +141,7 @@ app.post("/api/competitions", async (c) => {
 });
 
 // API: Get competition details with participants
-app.get("/api/competitions/:slugOrId", (c) => {
+app.get("/api/competitions/:slugOrId", async (c) => {
   const slugOrId = c.req.param("slugOrId");
   const competition = findCompetition(slugOrId);
 
@@ -100,16 +149,22 @@ app.get("/api/competitions/:slugOrId", (c) => {
     return c.json({ error: "Competition not found" }, 404);
   }
 
+  // Auto-refresh prices if cache is stale
+  await refreshPricesIfNeeded(competition);
+
   const participants = db.query(`
     SELECT * FROM participants 
     WHERE competition_id = ? 
     ORDER BY percent_change DESC NULLS LAST, name ASC
   `).all(competition.id);
 
+  const isLocked = isCompetitionLocked(competition);
+
   return c.json({
     ...competition,
     is_pick_window_open: isPickWindowOpen(competition),
-    is_locked: isCompetitionLocked(competition),
+    is_locked: isLocked,
+    can_join: !isLocked,
     participants,
   });
 });
@@ -130,8 +185,8 @@ app.post("/api/competitions/:slugOrId/join", async (c) => {
     return c.json({ error: "Competition not found" }, 404);
   }
 
-  if (!isPickWindowOpen(competition)) {
-    return c.json({ error: "Pick window is not open" }, 400);
+  if (isCompetitionLocked(competition)) {
+    return c.json({ error: "Competition is locked, pick window has ended" }, 400);
   }
 
   // Check if name is already taken in this competition
@@ -233,55 +288,6 @@ app.get("/api/competitions/:slugOrId/leaderboard", (c) => {
       ...p,
     })),
   });
-});
-
-// API: Manually trigger price update for a competition
-app.post("/api/competitions/:slugOrId/refresh-prices", async (c) => {
-  const slugOrId = c.req.param("slugOrId");
-  const competition = findCompetition(slugOrId);
-
-  if (!competition) {
-    return c.json({ error: "Competition not found" }, 404);
-  }
-
-  const participants = db.query(`SELECT * FROM participants WHERE competition_id = ?`).all(competition.id) as Array<{
-    id: string;
-    ticker: string;
-    baseline_price: number | null;
-  }>;
-
-  const isLocked = isCompetitionLocked(competition);
-
-  for (const participant of participants) {
-    const price = await fetchPrice(participant.ticker);
-    if (price === null) continue;
-
-    // If competition just locked and no baseline, set baseline
-    if (isLocked && participant.baseline_price === null) {
-      db.run(
-        `UPDATE participants SET baseline_price = ?, current_price = ?, percent_change = 0 WHERE id = ?`,
-        [price, price, participant.id]
-      );
-    } else if (participant.baseline_price !== null) {
-      // Update current price and calculate percent change
-      const percentChange = ((price - participant.baseline_price) / participant.baseline_price) * 100;
-      db.run(
-        `UPDATE participants SET current_price = ?, percent_change = ? WHERE id = ?`,
-        [price, percentChange, participant.id]
-      );
-    } else {
-      // Just update current price (window still open)
-      db.run(`UPDATE participants SET current_price = ? WHERE id = ?`, [price, participant.id]);
-    }
-
-    // Record in price history
-    db.run(
-      `INSERT INTO price_history (id, ticker, price) VALUES (?, ?, ?)`,
-      [generateId(), participant.ticker, price]
-    );
-  }
-
-  return c.json({ success: true, updated: participants.length });
 });
 
 const PORT = parseInt(process.env.PORT || "3000");
