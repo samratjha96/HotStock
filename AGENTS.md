@@ -90,11 +90,24 @@ No build step required. Changes to these files are immediately reflected.
    # Visit http://localhost:3000
    ```
 
-2. **Docker deployment**:
+2. **Docker deployment** (local):
    ```bash
    docker compose up --build
    # Visit http://localhost:3000
    ```
+
+## Deploying to Production
+
+The app is deployed on `homelab-cloud` at https://hotstock.techbrohomelab.xyz
+
+To deploy changes to production:
+```bash
+ssh homelab-cloud "cd ~/Github/HotStock && git pull && docker compose down && docker compose up -d --build"
+```
+
+**Note:** The site uses Cloudflare CDN which may cache static assets (CSS, JS). If CSS changes don't appear after deployment, you may need to either:
+- Wait for cache to expire
+- Temporarily add a cache-busting query param (e.g., `style.css?v=2`) and redeploy
 
 ## Common Pitfalls
 
