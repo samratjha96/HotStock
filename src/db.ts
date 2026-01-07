@@ -6,10 +6,11 @@ import { Database } from "bun:sqlite";
 const DB_PATH = process.env.DB_PATH || "./data/stock-picker.db";
 
 // Ensure data directory exists
-import { mkdirSync } from "fs";
-import { dirname } from "path";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
 try {
-  mkdirSync(dirname(DB_PATH), { recursive: true });
+	mkdirSync(dirname(DB_PATH), { recursive: true });
 } catch {}
 
 export const db = new Database(DB_PATH);
@@ -29,24 +30,31 @@ db.run(`
 `);
 
 // Migration: Add slug column if it doesn't exist
-const columns = db.query("PRAGMA table_info(competitions)").all() as Array<{ name: string }>;
-const hasSlug = columns.some(col => col.name === "slug");
+const columns = db.query("PRAGMA table_info(competitions)").all() as Array<{
+	name: string;
+}>;
+const hasSlug = columns.some((col) => col.name === "slug");
 if (!hasSlug) {
-  db.run("ALTER TABLE competitions ADD COLUMN slug TEXT");
-  // Generate slugs for existing competitions
-  const existingComps = db.query("SELECT id FROM competitions WHERE slug IS NULL").all() as Array<{ id: string }>;
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  for (const comp of existingComps) {
-    let slug = "";
-    for (let i = 0; i < 8; i++) {
-      slug += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    db.run("UPDATE competitions SET slug = ? WHERE id = ?", [slug, comp.id]);
-  }
+	db.run("ALTER TABLE competitions ADD COLUMN slug TEXT");
+	// Generate slugs for existing competitions
+	const existingComps = db
+		.query("SELECT id FROM competitions WHERE slug IS NULL")
+		.all() as Array<{ id: string }>;
+	const chars =
+		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	for (const comp of existingComps) {
+		let slug = "";
+		for (let i = 0; i < 8; i++) {
+			slug += chars.charAt(Math.floor(Math.random() * chars.length));
+		}
+		db.run("UPDATE competitions SET slug = ? WHERE id = ?", [slug, comp.id]);
+	}
 }
 
 // Create index for slug lookups (only if slug column exists now)
-db.run(`CREATE INDEX IF NOT EXISTS idx_competitions_slug ON competitions(slug)`);
+db.run(
+	`CREATE INDEX IF NOT EXISTS idx_competitions_slug ON competitions(slug)`,
+);
 
 db.run(`
   CREATE TABLE IF NOT EXISTS participants (
@@ -73,19 +81,24 @@ db.run(`
 `);
 
 // Create indexes for common queries
-db.run(`CREATE INDEX IF NOT EXISTS idx_participants_competition ON participants(competition_id)`);
-db.run(`CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)`);
+db.run(
+	`CREATE INDEX IF NOT EXISTS idx_participants_competition ON participants(competition_id)`,
+);
+db.run(
+	`CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)`,
+);
 
 export function generateId(): string {
-  return crypto.randomUUID();
+	return crypto.randomUUID();
 }
 
 export function generateSlug(): string {
-  // Generate a short random slug like pastebin (e.g., "a7xK2m")
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let slug = "";
-  for (let i = 0; i < 8; i++) {
-    slug += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return slug;
+	// Generate a short random slug like pastebin (e.g., "a7xK2m")
+	const chars =
+		"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+	let slug = "";
+	for (let i = 0; i < 8; i++) {
+		slug += chars.charAt(Math.floor(Math.random() * chars.length));
+	}
+	return slug;
 }

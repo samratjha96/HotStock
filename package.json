@@ -1,15 +1,21 @@
 {
-  "name": "hotstock",
-  "module": "index.ts",
-  "type": "module",
-  "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "hono": "^4.11.3"
-  }
+	"name": "hotstock",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"scripts": {
+		"lint": "bunx --bun biome check .",
+		"lint:fix": "bunx --bun biome check --write .",
+		"format": "bunx --bun biome format --write ."
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.3.11",
+		"@types/bun": "latest"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"hono": "^4.11.3"
+	}
 }
