@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { rateLimiter } from "hono-rate-limiter";
 import { db, generateId, generateSlug } from "./src/db";
-import { fetchPrice, validateTicker } from "./src/yahoo";
+import { fetchHistoricalPrice, fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
 
@@ -97,7 +97,14 @@ function isPickWindowOpen(competition: {
 // Helper to check if competition is locked (past pick window)
 function isCompetitionLocked(competition: {
 	pick_window_end: string;
+	backfill_mode?: number;
+	finalized?: number;
 }): boolean {
+	// Backfill competitions are only locked when finalized
+	if (competition.backfill_mode) {
+		return competition.finalized === 1;
+	}
+	// Regular competitions lock when pick window ends
 	const now = new Date();
 	const end = new Date(competition.pick_window_end);
 	return now > end;
@@ -122,6 +129,8 @@ function findCompetition(slugOrId: string) {
 		pick_window_start: string;
 		pick_window_end: string;
 		created_at: string;
+		backfill_mode: number;
+		finalized: number;
 	} | null;
 }
 
@@ -176,7 +185,7 @@ async function refreshPricesIfNeeded(competition: {
 	priceCache.set(competition.id, now);
 }
 
-// API: List all competitions (only locked ones are public)
+// API: List all competitions (locked or finalized backfill competitions are public)
 app.get("/api/competitions", (c) => {
 	const competitions = db
 		.query(`
@@ -184,7 +193,7 @@ app.get("/api/competitions", (c) => {
            COUNT(p.id) as participant_count
     FROM competitions c
     LEFT JOIN participants p ON p.competition_id = c.id
-    WHERE c.pick_window_end < datetime('now')
+    WHERE c.pick_window_end < datetime('now') OR (c.backfill_mode = 1 AND c.finalized = 1)
     GROUP BY c.id
     ORDER BY c.created_at DESC
   `)
@@ -195,7 +204,7 @@ app.get("/api/competitions", (c) => {
 // API: Create a competition (with stricter rate limit)
 app.post("/api/competitions", writeLimiter, async (c) => {
 	const body = await c.req.json();
-	const { name, pick_window_start, pick_window_end } = body;
+	const { name, pick_window_start, pick_window_end, backfill_mode } = body;
 
 	if (!name || !pick_window_start || !pick_window_end) {
 		return c.json(
@@ -228,11 +237,33 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 		return c.json({ error: "End date must be after start date" }, 400);
 	}
 
+	// Backfill mode allows past start dates, regular mode does not
+	const isBackfill = backfill_mode === true;
+	if (!isBackfill) {
+		const now = new Date();
+		if (startDate < now) {
+			return c.json(
+				{
+					error:
+						"Start date must be in the future. Use backfill mode for past competitions.",
+				},
+				400,
+			);
+		}
+	}
+
 	const id = generateId();
 	const slug = generateSlug();
 	db.run(
-		`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end) VALUES (?, ?, ?, ?, ?)`,
-		[id, sanitizedName, slug, pick_window_start, pick_window_end],
+		`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, backfill_mode, finalized) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+		[
+			id,
+			sanitizedName,
+			slug,
+			pick_window_start,
+			pick_window_end,
+			isBackfill ? 1 : 0,
+		],
 	);
 
 	const competition = db
@@ -268,6 +299,8 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 		is_pick_window_open: isPickWindowOpen(competition),
 		is_locked: isLocked,
 		can_join: !isLocked,
+		is_backfill: competition.backfill_mode === 1,
+		is_finalized: competition.finalized === 1,
 		participants,
 	});
 });
@@ -334,8 +367,33 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		return c.json({ error: "Invalid stock ticker" }, 400);
 	}
 
-	// Fetch initial price
-	const currentPrice = await fetchPrice(sanitizedTicker);
+	// For backfill competitions, fetch historical price from start date
+	// For regular competitions, fetch current price
+	let baselinePrice: number | null;
+	let currentPrice: number | null;
+
+	if (competition.backfill_mode) {
+		const startDate = new Date(competition.pick_window_start);
+		baselinePrice = await fetchHistoricalPrice(sanitizedTicker, startDate);
+		if (baselinePrice === null) {
+			return c.json(
+				{
+					error: `Could not fetch historical price for ${sanitizedTicker} on ${startDate.toDateString()}`,
+				},
+				400,
+			);
+		}
+		currentPrice = await fetchPrice(sanitizedTicker);
+	} else {
+		currentPrice = await fetchPrice(sanitizedTicker);
+		baselinePrice = currentPrice;
+	}
+
+	// Calculate percent change
+	const percentChange =
+		baselinePrice && currentPrice
+			? ((currentPrice - baselinePrice) / baselinePrice) * 100
+			: 0;
 
 	const id = generateId();
 	db.run(
@@ -345,9 +403,9 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 			competition.id,
 			sanitizedName,
 			sanitizedTicker,
+			baselinePrice,
 			currentPrice,
-			currentPrice,
-			0,
+			percentChange,
 		],
 	);
 
@@ -448,6 +506,80 @@ app.get("/api/competitions/:slugOrId/leaderboard", (c) => {
 			...p,
 		})),
 	});
+});
+
+// API: Finalize a backfill competition (with stricter rate limit)
+app.post("/api/competitions/:slugOrId/finalize", writeLimiter, async (c) => {
+	const slugOrId = c.req.param("slugOrId");
+	const competition = findCompetition(slugOrId);
+
+	if (!competition) {
+		return c.json({ error: "Competition not found" }, 404);
+	}
+
+	if (!competition.backfill_mode) {
+		return c.json(
+			{ error: "Only backfill competitions can be finalized" },
+			400,
+		);
+	}
+
+	if (competition.finalized) {
+		return c.json({ error: "Competition is already finalized" }, 400);
+	}
+
+	// Check that there's at least one participant
+	const participantCount = db
+		.query(
+			`SELECT COUNT(*) as count FROM participants WHERE competition_id = ?`,
+		)
+		.get(competition.id) as { count: number };
+
+	if (participantCount.count === 0) {
+		return c.json(
+			{ error: "Cannot finalize competition with no participants" },
+			400,
+		);
+	}
+
+	db.run(`UPDATE competitions SET finalized = 1 WHERE id = ?`, [
+		competition.id,
+	]);
+
+	const updated = db
+		.query(`SELECT * FROM competitions WHERE id = ?`)
+		.get(competition.id);
+	return c.json(updated);
+});
+
+// API: Unfinalize a backfill competition (to allow more edits)
+app.post("/api/competitions/:slugOrId/unfinalize", writeLimiter, async (c) => {
+	const slugOrId = c.req.param("slugOrId");
+	const competition = findCompetition(slugOrId);
+
+	if (!competition) {
+		return c.json({ error: "Competition not found" }, 404);
+	}
+
+	if (!competition.backfill_mode) {
+		return c.json(
+			{ error: "Only backfill competitions can be unfinalized" },
+			400,
+		);
+	}
+
+	if (!competition.finalized) {
+		return c.json({ error: "Competition is not finalized" }, 400);
+	}
+
+	db.run(`UPDATE competitions SET finalized = 0 WHERE id = ?`, [
+		competition.id,
+	]);
+
+	const updated = db
+		.query(`SELECT * FROM competitions WHERE id = ?`)
+		.get(competition.id);
+	return c.json(updated);
 });
 
 const PORT = parseInt(process.env.PORT || "3000", 10);

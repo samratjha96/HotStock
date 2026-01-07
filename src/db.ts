@@ -56,6 +56,22 @@ db.run(
 	`CREATE INDEX IF NOT EXISTS idx_competitions_slug ON competitions(slug)`,
 );
 
+// Migration: Add backfill_mode column if it doesn't exist
+const hasBackfillMode = columns.some((col) => col.name === "backfill_mode");
+if (!hasBackfillMode) {
+	db.run(
+		"ALTER TABLE competitions ADD COLUMN backfill_mode INTEGER NOT NULL DEFAULT 0",
+	);
+}
+
+// Migration: Add finalized column if it doesn't exist
+const hasFinalized = columns.some((col) => col.name === "finalized");
+if (!hasFinalized) {
+	db.run(
+		"ALTER TABLE competitions ADD COLUMN finalized INTEGER NOT NULL DEFAULT 0",
+	);
+}
+
 db.run(`
   CREATE TABLE IF NOT EXISTS participants (
     id TEXT PRIMARY KEY,

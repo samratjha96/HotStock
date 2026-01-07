@@ -77,3 +77,80 @@ export async function validateTicker(ticker: string): Promise<boolean> {
 	const price = await fetchPrice(ticker);
 	return price !== null;
 }
+
+// Fetch historical price for a specific date
+// Returns the closing price for that trading day (or nearest previous trading day)
+export async function fetchHistoricalPrice(
+	ticker: string,
+	date: Date,
+): Promise<number | null> {
+	// Yahoo Finance chart API accepts period1/period2 as Unix timestamps
+	// We request a small range around the target date to handle weekends/holidays
+	const targetTimestamp = Math.floor(date.getTime() / 1000);
+	// Go back 7 days to ensure we capture at least one trading day
+	const startTimestamp = targetTimestamp - 7 * 24 * 60 * 60;
+	// End at the target date (or slightly after to include it)
+	const endTimestamp = targetTimestamp + 24 * 60 * 60;
+
+	const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${startTimestamp}&period2=${endTimestamp}&interval=1d`;
+
+	let response = await fetch(url, {
+		headers: { "User-Agent": getRandomUserAgent() },
+	});
+
+	// Handle rate limiting with retry
+	if (response.status === 429) {
+		await new Promise((r) => setTimeout(r, 2000));
+		response = await fetch(url, {
+			headers: { "User-Agent": getRandomUserAgent() },
+		});
+	}
+
+	if (!response.ok) {
+		console.error(
+			`Failed to fetch historical price for ${ticker}: ${response.status}`,
+		);
+		return null;
+	}
+
+	const data = (await response.json()) as YahooHistoricalResponse;
+	const result = data.chart?.result?.[0];
+
+	if (!result?.timestamp || !result?.indicators?.quote?.[0]?.close) {
+		console.error(`No historical data for ${ticker} around ${date}`);
+		return null;
+	}
+
+	const timestamps = result.timestamp;
+	const closes = result.indicators.quote[0].close;
+
+	// Find the latest price on or before the target date
+	let bestPrice: number | null = null;
+	for (let i = 0; i < timestamps.length; i++) {
+		const ts = timestamps[i];
+		const closePrice = closes[i];
+		if (ts !== undefined && ts <= targetTimestamp && closePrice != null) {
+			bestPrice = closePrice;
+		}
+	}
+
+	if (bestPrice === null) {
+		console.error(`Could not find price for ${ticker} on or before ${date}`);
+	}
+
+	return bestPrice;
+}
+
+interface YahooHistoricalResponse {
+	chart: {
+		result?: Array<{
+			timestamp?: number[];
+			indicators?: {
+				quote?: Array<{
+					close?: (number | null)[];
+				}>;
+			};
+		}>;
+		error?: unknown;
+	};
+}

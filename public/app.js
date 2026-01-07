@@ -38,6 +38,20 @@ const API = {
 		});
 		return res.json();
 	},
+
+	async finalizeCompetition(slugOrId) {
+		const res = await fetch(`/api/competitions/${slugOrId}/finalize`, {
+			method: "POST",
+		});
+		return res.json();
+	},
+
+	async unfinalizeCompetition(slugOrId) {
+		const res = await fetch(`/api/competitions/${slugOrId}/unfinalize`, {
+			method: "POST",
+		});
+		return res.json();
+	},
 };
 
 // State
@@ -67,6 +81,14 @@ function formatDate(isoString) {
 
 // Get competition status
 function getStatus(competition) {
+	// Past competitions have special status handling
+	if (competition.backfill_mode || competition.is_backfill) {
+		if (competition.finalized || competition.is_finalized) {
+			return { text: "Locked", class: "status-locked" };
+		}
+		return { text: "Adding Picks", class: "status-setup" };
+	}
+
 	const now = new Date();
 	const start = new Date(competition.pick_window_start);
 	const end = new Date(competition.pick_window_end);
@@ -133,20 +155,47 @@ async function renderCompetitionDetail(slug) {
 	const status = getStatus(comp);
 	const shareUrl = `${window.location.origin}/#${comp.slug}`;
 
+	// Determine which buttons to show
+	let actionButtons = "";
+	if (comp.is_backfill && !comp.is_finalized) {
+		// Past competition mode: show Add Participant and Lock buttons
+		actionButtons = `
+			<button id="join-btn" class="btn btn-primary">+ Add Participant</button>
+			<button id="finalize-btn" class="btn btn-secondary">Lock Competition</button>
+		`;
+	} else if (comp.is_backfill && comp.is_finalized) {
+		// Locked past competition: show Unlock button
+		actionButtons = `
+			<button id="unfinalize-btn" class="btn btn-secondary">Unlock for Edits</button>
+		`;
+	} else if (comp.can_join) {
+		// Regular competition that's open
+		actionButtons =
+			'<button id="join-btn" class="btn btn-primary">Join Competition</button>';
+	}
+
+	// Show baseline date info for past competitions
+	const baselineInfo = comp.is_backfill
+		? `<p class="backfill-info">Prices from: ${formatDate(comp.pick_window_start)}</p>`
+		: "";
+
 	competitionDetail.innerHTML = `
     <div class="competition-detail-header">
       <h2>${escapeHtml(comp.name)}</h2>
       <span class="status-badge ${status.class}">${status.text}</span>
-      <p class="window-info">
-        Pick window: ${formatDate(comp.pick_window_start)} — ${formatDate(comp.pick_window_end)}
-      </p>
+      ${
+				comp.is_backfill
+					? `<p class="window-info">Started: ${formatDate(comp.pick_window_start)}</p>`
+					: `<p class="window-info">Pick window: ${formatDate(comp.pick_window_start)} — ${formatDate(comp.pick_window_end)}</p>`
+			}
+      ${baselineInfo}
       <div class="share-url">
         <label>Share this competition:</label>
         <input type="text" readonly value="${shareUrl}" id="share-url-input" onclick="this.select()">
         <button id="copy-url-btn" class="btn btn-small btn-secondary">Copy</button>
       </div>
       <div class="action-buttons">
-        ${comp.can_join ? '<button id="join-btn" class="btn btn-primary">Join Competition</button>' : ""}
+        ${actionButtons}
       </div>
     </div>
 
@@ -172,6 +221,39 @@ async function renderCompetitionDetail(slug) {
 			setTimeout(() => {
 				copyBtn.textContent = "Copy";
 			}, 2000);
+		});
+	}
+
+	// Finalize button
+	const finalizeBtn = document.getElementById("finalize-btn");
+	if (finalizeBtn) {
+		finalizeBtn.addEventListener("click", async () => {
+			if (
+				!confirm(
+					"Lock this competition? It will appear on the homepage and no more changes can be made.",
+				)
+			) {
+				return;
+			}
+			const result = await API.finalizeCompetition(slug);
+			if (result.error) {
+				alert(result.error);
+				return;
+			}
+			renderCompetitionDetail(slug);
+		});
+	}
+
+	// Unfinalize button
+	const unfinalizeBtn = document.getElementById("unfinalize-btn");
+	if (unfinalizeBtn) {
+		unfinalizeBtn.addEventListener("click", async () => {
+			const result = await API.unfinalizeCompetition(slug);
+			if (result.error) {
+				alert(result.error);
+				return;
+			}
+			renderCompetitionDetail(slug);
 		});
 	}
 
@@ -271,6 +353,12 @@ function showCreateModal() {
 	document.getElementById("pick-start").value = formatDateForInput(tomorrow);
 	document.getElementById("pick-end").value = formatDateForInput(nextWeek);
 
+	// Reset backfill mode
+	const backfillCheckbox = document.getElementById("backfill-mode");
+	backfillCheckbox.checked = false;
+	document.getElementById("backfill-options").classList.add("hidden");
+	document.getElementById("regular-dates").classList.remove("hidden");
+
 	createModal.classList.remove("hidden");
 }
 
@@ -336,19 +424,59 @@ document.getElementById("cancel-edit").addEventListener("click", hideEditModal);
 	});
 });
 
+// Backfill mode toggle
+document.getElementById("backfill-mode").addEventListener("change", (e) => {
+	const backfillOptions = document.getElementById("backfill-options");
+	const regularDates = document.getElementById("regular-dates");
+
+	if (e.target.checked) {
+		backfillOptions.classList.remove("hidden");
+		regularDates.classList.add("hidden");
+	} else {
+		backfillOptions.classList.add("hidden");
+		regularDates.classList.remove("hidden");
+	}
+});
+
 // Form submissions
 document.getElementById("create-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
-	const data = {
-		name: document.getElementById("comp-name").value,
-		pick_window_start: new Date(
-			document.getElementById("pick-start").value,
-		).toISOString(),
-		pick_window_end: new Date(
-			document.getElementById("pick-end").value,
-		).toISOString(),
-	};
+	const isBackfill = document.getElementById("backfill-mode").checked;
+	let data;
+
+	if (isBackfill) {
+		// Past competition: use the single date as both start and end (pick window already closed)
+		const backfillDate = document.getElementById("backfill-start").value;
+		if (!backfillDate) {
+			alert("Please select the date when the competition started");
+			return;
+		}
+		// Set start to beginning of that day, end to 1 second later (so pick window is closed)
+		const startDate = new Date(backfillDate);
+		startDate.setHours(0, 0, 0, 0);
+		const endDate = new Date(startDate.getTime() + 1000);
+
+		data = {
+			name: document.getElementById("comp-name").value,
+			pick_window_start: startDate.toISOString(),
+			pick_window_end: endDate.toISOString(),
+			backfill_mode: true,
+		};
+	} else {
+		// Regular mode
+		const pickStart = document.getElementById("pick-start").value;
+		const pickEnd = document.getElementById("pick-end").value;
+		if (!pickStart || !pickEnd) {
+			alert("Please select pick window dates");
+			return;
+		}
+		data = {
+			name: document.getElementById("comp-name").value,
+			pick_window_start: new Date(pickStart).toISOString(),
+			pick_window_end: new Date(pickEnd).toISOString(),
+		};
+	}
 
 	const result = await API.createCompetition(data);
 
