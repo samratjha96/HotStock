@@ -2,7 +2,7 @@
 // ABOUTME: Idempotent - only seeds if Demo competition doesn't exist
 
 // Import db to ensure schema is created before seeding
-import { db } from "./src/db";
+import { db, generateSlug } from "./src/db";
 
 // Check if Demo competition already exists
 const existingDemo = db.query("SELECT id FROM competitions WHERE name = 'Demo'").get();
@@ -16,7 +16,7 @@ console.log("Creating Demo competition...");
 
 // Demo competition with a closed pick window to show leaderboard functionality
 const competitionId = crypto.randomUUID();
-const competitionSlug = "demo";
+const competitionSlug = generateSlug();
 const competition = {
   id: competitionId,
   name: "Demo",
