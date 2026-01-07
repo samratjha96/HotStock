@@ -68,7 +68,19 @@ All API routes are in `index.ts`:
 - `PUT /api/participants/:id` - Update participant's pick
 - `POST /api/competitions/:slugOrId/refresh-prices` - Refresh stock prices
 
-### 6. Frontend
+### 6. TypeScript Best Practices
+**No cheating with types.** All TypeScript code must be properly typed:
+
+- **Never use `any`** - Always define proper types or interfaces
+- **Never use `unknown` as a cop-out** - If you receive `unknown`, narrow it with type guards
+- **No `@ts-ignore` or `@ts-expect-error`** - Fix the underlying type issue instead
+- **No type assertions (`as`)** unless absolutely necessary and justified
+- **Define explicit return types** for functions
+- **Define interfaces/types** for all data structures (API responses, database rows, etc.)
+
+If the TypeScript compiler complains, fix the types properly. Don't silence errors.
+
+### 7. Frontend
 Static files served from `public/`:
 - `index.html` - Single page app
 - `style.css` - March Madness tournament theme

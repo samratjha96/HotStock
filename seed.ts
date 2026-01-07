@@ -47,76 +47,108 @@ db.run(
 // Current prices need to be fetched or estimated for Jan 7, 2026
 // Using approximate historical data
 
+interface StockData {
+	ticker: string;
+	baselinePrice: number;
+	currentPrice: number;
+}
+
 interface ParticipantData {
 	name: string;
-	ticker: string;
-	baselinePrice: number; // Price at lock date (July 1, 2025)
-	currentPrice: number; // Price today (Jan 7, 2026) - simulated
+	portfolio: StockData[];
 }
 
 // These are simulated prices - in reality you'd fetch current prices from Yahoo
 const participants: ParticipantData[] = [
-	// Big tech - mixed performance
-	{ name: "Alice", ticker: "NVDA", baselinePrice: 123.54, currentPrice: 148.9 }, // +20.5% - AI boom continues
-	{ name: "Bob", ticker: "AAPL", baselinePrice: 218.24, currentPrice: 243.15 }, // +11.4% - steady growth
+	// Single-stock portfolios (traditional picks)
+	{
+		name: "Alice",
+		portfolio: [{ ticker: "NVDA", baselinePrice: 123.54, currentPrice: 148.9 }],
+	}, // +20.5% - AI boom continues
+	{
+		name: "Bob",
+		portfolio: [
+			{ ticker: "AAPL", baselinePrice: 218.24, currentPrice: 243.15 },
+		],
+	}, // +11.4% - steady growth
 	{
 		name: "Charlie",
-		ticker: "GOOGL",
-		baselinePrice: 184.76,
-		currentPrice: 197.3,
+		portfolio: [
+			{ ticker: "GOOGL", baselinePrice: 184.76, currentPrice: 197.3 },
+		],
 	}, // +6.8%
-	{ name: "Diana", ticker: "MSFT", baselinePrice: 447.45, currentPrice: 431.2 }, // -3.6% - slight dip
-	{ name: "Eve", ticker: "META", baselinePrice: 504.22, currentPrice: 612.77 }, // +21.5% - strong reels/AI
+	{
+		name: "Diana",
+		portfolio: [{ ticker: "MSFT", baselinePrice: 447.45, currentPrice: 431.2 }],
+	}, // -3.6% - slight dip
 
-	// EVs and automotive
+	// Multi-stock portfolios (new feature)
+	{
+		name: "Eve",
+		portfolio: [
+			{ ticker: "META", baselinePrice: 504.22, currentPrice: 612.77 }, // +21.5%
+			{ ticker: "NVDA", baselinePrice: 123.54, currentPrice: 148.9 }, // +20.5%
+			{ ticker: "GOOGL", baselinePrice: 184.76, currentPrice: 197.3 }, // +6.8%
+		],
+	}, // avg ~16.3%
+
 	{
 		name: "Frank",
-		ticker: "TSLA",
-		baselinePrice: 248.48,
-		currentPrice: 410.44,
-	}, // +65.2% - big winner!
-	{ name: "Grace", ticker: "RIVN", baselinePrice: 13.88, currentPrice: 14.12 }, // +1.7% - barely moved
+		portfolio: [
+			{ ticker: "TSLA", baselinePrice: 248.48, currentPrice: 410.44 }, // +65.2%
+			{ ticker: "RIVN", baselinePrice: 13.88, currentPrice: 14.12 }, // +1.7%
+		],
+	}, // avg ~33.5% - EV focused
 
-	// Retail/Consumer
+	{
+		name: "Grace",
+		portfolio: [
+			{ ticker: "AMZN", baselinePrice: 197.12, currentPrice: 224.92 }, // +14.1%
+			{ ticker: "WMT", baselinePrice: 68.05, currentPrice: 91.94 }, // +35.1%
+			{ ticker: "COST", baselinePrice: 846.71, currentPrice: 924.44 }, // +9.2%
+		],
+	}, // avg ~19.5% - Retail portfolio
+
 	{
 		name: "Henry",
-		ticker: "AMZN",
-		baselinePrice: 197.12,
-		currentPrice: 224.92,
-	}, // +14.1%
-	{ name: "Ivy", ticker: "WMT", baselinePrice: 68.05, currentPrice: 91.94 }, // +35.1% - surprise performer
-	{ name: "Jack", ticker: "COST", baselinePrice: 846.71, currentPrice: 924.44 }, // +9.2%
+		portfolio: [
+			{ ticker: "COIN", baselinePrice: 237.81, currentPrice: 268.94 }, // +13.1%
+			{ ticker: "GME", baselinePrice: 23.14, currentPrice: 31.15 }, // +34.6%
+		],
+	}, // avg ~23.9% - High risk
 
-	// Crypto-adjacent
 	{
-		name: "Karen",
-		ticker: "COIN",
-		baselinePrice: 237.81,
-		currentPrice: 268.94,
-	}, // +13.1%
+		name: "Ivy",
+		portfolio: [
+			{ ticker: "JNJ", baselinePrice: 146.71, currentPrice: 144.07 }, // -1.8%
+			{ ticker: "XOM", baselinePrice: 114.71, currentPrice: 106.83 }, // -6.9%
+		],
+	}, // avg ~-4.4% - Defensive picks that didn't work
 
-	// Healthcare
-	{ name: "Leo", ticker: "JNJ", baselinePrice: 146.71, currentPrice: 144.07 }, // -1.8%
-
-	// Energy
-	{ name: "Maya", ticker: "XOM", baselinePrice: 114.71, currentPrice: 106.83 }, // -6.9% - oil struggles
-
-	// Meme stocks / risky picks
-	{ name: "Nick", ticker: "GME", baselinePrice: 23.14, currentPrice: 31.15 }, // +34.6% - meme magic
-	{ name: "Olivia", ticker: "AMC", baselinePrice: 4.89, currentPrice: 3.23 }, // -33.9% - big loser
+	{
+		name: "Jack",
+		portfolio: [{ ticker: "AMC", baselinePrice: 4.89, currentPrice: 3.23 }],
+	}, // -33.9% - big loser
 ];
 
 console.log(`Adding ${participants.length} participants...`);
 
 for (const p of participants) {
 	const participantId = crypto.randomUUID();
-	const percentChange =
-		((p.currentPrice - p.baselinePrice) / p.baselinePrice) * 100;
+
+	// Calculate aggregate percent change
+	const stockChanges = p.portfolio.map(
+		(s) => ((s.currentPrice - s.baselinePrice) / s.baselinePrice) * 100,
+	);
+	const avgPercentChange =
+		stockChanges.reduce((sum, c) => sum + c, 0) / stockChanges.length;
 
 	// Pick date is during the window (June 30 - July 1, 2025)
 	const pickDate = new Date("2025-06-30T14:00:00Z");
-	pickDate.setHours(pickDate.getHours() + Math.floor(Math.random() * 30)); // Random time in window
+	pickDate.setHours(pickDate.getHours() + Math.floor(Math.random() * 30));
 
+	// Insert participant (first ticker for backwards compat)
+	const firstStock = p.portfolio[0]!; // Safe: portfolio always has at least one stock
 	db.run(
 		`INSERT INTO participants (id, competition_id, name, ticker, baseline_price, current_price, percent_change, pick_date, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -124,23 +156,53 @@ for (const p of participants) {
 			participantId,
 			competitionId,
 			p.name,
-			p.ticker,
-			p.baselinePrice,
-			p.currentPrice,
-			percentChange,
+			firstStock.ticker,
+			firstStock.baselinePrice,
+			firstStock.currentPrice,
+			avgPercentChange,
 			pickDate.toISOString(),
 			pickDate.toISOString(),
 		],
 	);
 
+	// Insert portfolio stocks
+	for (const stock of p.portfolio) {
+		const stockPercentChange =
+			((stock.currentPrice - stock.baselinePrice) / stock.baselinePrice) * 100;
+		db.run(
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, added_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			[
+				crypto.randomUUID(),
+				participantId,
+				stock.ticker,
+				stock.baselinePrice,
+				stock.currentPrice,
+				stockPercentChange,
+				pickDate.toISOString(),
+			],
+		);
+	}
+
+	const tickerStr = p.portfolio.map((s) => s.ticker).join(", ");
 	console.log(
-		`  ${p.name}: ${p.ticker} @ $${p.baselinePrice} -> $${p.currentPrice} (${percentChange > 0 ? "+" : ""}${percentChange.toFixed(1)}%)`,
+		`  ${p.name}: [${tickerStr}] (${avgPercentChange > 0 ? "+" : ""}${avgPercentChange.toFixed(1)}%)`,
 	);
 }
 
 // Add some price history entries for realism
 console.log("\nAdding price history entries...");
-const tickers = [...new Set(participants.map((p) => p.ticker))];
+
+// Collect all unique stocks with their price data
+const allStocks = new Map<string, StockData>();
+for (const p of participants) {
+	for (const stock of p.portfolio) {
+		if (!allStocks.has(stock.ticker)) {
+			allStocks.set(stock.ticker, stock);
+		}
+	}
+}
+
 const historyDates = [
 	"2025-07-01T20:00:00Z",
 	"2025-08-01T20:00:00Z",
@@ -151,18 +213,15 @@ const historyDates = [
 	"2026-01-07T20:00:00Z",
 ];
 
-for (const ticker of tickers) {
-	// biome-ignore lint/style/noNonNullAssertion: ticker is always found (from same tickers array used to create participants)
-	const participant = participants.find((p) => p.ticker === ticker)!;
-	const priceRange = participant.currentPrice - participant.baselinePrice;
+for (const [ticker, stock] of allStocks) {
+	const priceRange = stock.currentPrice - stock.baselinePrice;
 
 	for (const historyDate of historyDates) {
 		// Simulate gradual price change over time
 		const dateIndex = historyDates.indexOf(historyDate);
 		const progress = (dateIndex + 1) / historyDates.length;
 		const priceAtDate =
-			participant.baselinePrice +
-			priceRange * progress * (0.8 + Math.random() * 0.4);
+			stock.baselinePrice + priceRange * progress * (0.8 + Math.random() * 0.4);
 
 		db.run(
 			`INSERT INTO price_history (id, ticker, price, fetched_at) VALUES (?, ?, ?, ?)`,

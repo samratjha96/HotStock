@@ -14,6 +14,11 @@ function getRandomUserAgent(): string {
 	return USER_AGENTS[idx]!;
 }
 
+// Yahoo Finance uses dashes instead of dots in tickers (e.g., BRK-B not BRK.B)
+function normalizeTickerForYahoo(ticker: string): string {
+	return ticker.replace(/\./g, "-");
+}
+
 interface PriceCache {
 	price: number;
 	fetchedAt: number;
@@ -35,13 +40,15 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 const priceCache = new Map<string, PriceCache>();
 
 export async function fetchPrice(ticker: string): Promise<number | null> {
-	// Check cache first
-	const cached = priceCache.get(ticker.toUpperCase());
+	// Check cache first (use original ticker for cache key)
+	const cacheKey = ticker.toUpperCase();
+	const cached = priceCache.get(cacheKey);
 	if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
 		return cached.price;
 	}
 
-	const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1d`;
+	const yahooTicker = normalizeTickerForYahoo(ticker);
+	const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?range=1d&interval=1d`;
 
 	let response = await fetch(url, {
 		headers: { "User-Agent": getRandomUserAgent() },
@@ -64,7 +71,7 @@ export async function fetchPrice(ticker: string): Promise<number | null> {
 	const price = data.chart?.result?.[0]?.meta?.regularMarketPrice ?? null;
 
 	if (price !== null) {
-		priceCache.set(ticker.toUpperCase(), {
+		priceCache.set(cacheKey, {
 			price,
 			fetchedAt: Date.now(),
 		});
@@ -92,7 +99,8 @@ export async function fetchHistoricalPrice(
 	// End at the target date (or slightly after to include it)
 	const endTimestamp = targetTimestamp + 24 * 60 * 60;
 
-	const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?period1=${startTimestamp}&period2=${endTimestamp}&interval=1d`;
+	const yahooTicker = normalizeTickerForYahoo(ticker);
+	const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooTicker)}?period1=${startTimestamp}&period2=${endTimestamp}&interval=1d`;
 
 	let response = await fetch(url, {
 		headers: { "User-Agent": getRandomUserAgent() },

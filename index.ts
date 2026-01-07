@@ -153,43 +153,75 @@ async function refreshPricesIfNeeded(competition: {
 		return; // Cache still valid
 	}
 
-	const participants = db
-		.query(`SELECT * FROM participants WHERE competition_id = ?`)
+	// Get all portfolio stocks for this competition's participants
+	const portfolioStocks = db
+		.query(`
+			SELECT ps.id, ps.participant_id, ps.ticker, ps.baseline_price
+			FROM portfolio_stocks ps
+			JOIN participants p ON p.id = ps.participant_id
+			WHERE p.competition_id = ?
+		`)
 		.all(competition.id) as Array<{
 		id: string;
+		participant_id: string;
 		ticker: string;
 		baseline_price: number | null;
 	}>;
 
-	for (const participant of participants) {
-		const price = await fetchPrice(participant.ticker);
+	// Track which participants need aggregate recalculation
+	const participantsToUpdate = new Set<string>();
+
+	for (const stock of portfolioStocks) {
+		const price = await fetchPrice(stock.ticker);
 		if (price === null) continue;
 
-		if (participant.baseline_price === null) {
+		if (stock.baseline_price === null) {
 			// No baseline yet - set both baseline and current to same price
 			db.run(
-				`UPDATE participants SET baseline_price = ?, current_price = ?, percent_change = 0 WHERE id = ?`,
-				[price, price, participant.id],
+				`UPDATE portfolio_stocks SET baseline_price = ?, current_price = ?, percent_change = 0 WHERE id = ?`,
+				[price, price, stock.id],
 			);
 		} else {
 			// Has baseline - update current price and calculate change
 			const percentChange =
-				((price - participant.baseline_price) / participant.baseline_price) *
-				100;
+				((price - stock.baseline_price) / stock.baseline_price) * 100;
 			db.run(
-				`UPDATE participants SET current_price = ?, percent_change = ? WHERE id = ?`,
-				[price, percentChange, participant.id],
+				`UPDATE portfolio_stocks SET current_price = ?, percent_change = ? WHERE id = ?`,
+				[price, percentChange, stock.id],
 			);
 		}
 
+		participantsToUpdate.add(stock.participant_id);
+
 		db.run(`INSERT INTO price_history (id, ticker, price) VALUES (?, ?, ?)`, [
 			generateId(),
-			participant.ticker,
+			stock.ticker,
 			price,
 		]);
 	}
 
+	// Update aggregate percent_change for each participant
+	for (const participantId of participantsToUpdate) {
+		updateParticipantAggregate(participantId);
+	}
+
 	priceCache.set(competition.id, now);
+}
+
+// Helper to recalculate a participant's aggregate percent_change from their portfolio
+function updateParticipantAggregate(participantId: string): void {
+	const result = db
+		.query(`
+			SELECT AVG(percent_change) as avg_change
+			FROM portfolio_stocks
+			WHERE participant_id = ? AND percent_change IS NOT NULL
+		`)
+		.get(participantId) as { avg_change: number | null };
+
+	db.run(`UPDATE participants SET percent_change = ? WHERE id = ?`, [
+		result.avg_change,
+		participantId,
+	]);
 }
 
 // API: List all competitions (locked or finalized backfill competitions are public)
@@ -297,7 +329,17 @@ app.get("/api/competitions/:slugOrId", async (c) => {
     WHERE competition_id = ? 
     ORDER BY percent_change DESC NULLS LAST, name ASC
   `)
-		.all(competition.id);
+		.all(competition.id) as Array<Record<string, unknown>>;
+
+	// Get portfolio stocks for each participant
+	const participantsWithPortfolio = participants.map((p) => {
+		const portfolioStocks = db
+			.query(
+				`SELECT * FROM portfolio_stocks WHERE participant_id = ? ORDER BY ticker ASC`,
+			)
+			.all(p.id as string);
+		return { ...p, portfolio: portfolioStocks };
+	});
 
 	const isLocked = isCompetitionLocked(competition);
 
@@ -308,7 +350,7 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 		can_join: !isLocked,
 		is_backfill: competition.backfill_mode === 1,
 		is_finalized: competition.finalized === 1,
-		participants,
+		participants: participantsWithPortfolio,
 	});
 });
 
@@ -316,10 +358,18 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 	const slugOrId = c.req.param("slugOrId");
 	const body = await c.req.json();
-	const { name, ticker } = body;
+	const { name, ticker, tickers } = body;
 
-	if (!name || !ticker) {
-		return c.json({ error: "Missing required fields: name, ticker" }, 400);
+	// Support both single ticker (backwards compat) and array of tickers
+	const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+
+	if (!name || tickerList.length === 0) {
+		return c.json({ error: "Missing required fields: name, ticker(s)" }, 400);
+	}
+
+	// Validate portfolio size (1-10 stocks)
+	if (tickerList.length > 10) {
+		return c.json({ error: "Portfolio cannot exceed 10 stocks" }, 400);
 	}
 
 	// Validate participant name
@@ -333,16 +383,25 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 	}
 	const sanitizedName = nameValidation.sanitized;
 
-	// Validate ticker format (before Yahoo API call)
-	const tickerValidation = validateStringInput(
-		ticker,
-		"Ticker",
-		MAX_TICKER_LENGTH,
-	);
-	if (!tickerValidation.valid) {
-		return c.json({ error: tickerValidation.error }, 400);
+	// Validate and sanitize all tickers
+	const sanitizedTickers: string[] = [];
+	for (const t of tickerList) {
+		const tickerValidation = validateStringInput(
+			t,
+			"Ticker",
+			MAX_TICKER_LENGTH,
+		);
+		if (!tickerValidation.valid) {
+			return c.json({ error: tickerValidation.error }, 400);
+		}
+		sanitizedTickers.push(tickerValidation.sanitized.toUpperCase());
 	}
-	const sanitizedTicker = tickerValidation.sanitized.toUpperCase();
+
+	// Check for duplicate tickers in the request
+	const uniqueTickers = new Set(sanitizedTickers);
+	if (uniqueTickers.size !== sanitizedTickers.length) {
+		return c.json({ error: "Portfolio cannot contain duplicate tickers" }, 400);
+	}
 
 	const competition = findCompetition(slugOrId);
 
@@ -368,84 +427,138 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		return c.json({ error: "Name already taken in this competition" }, 400);
 	}
 
-	// Validate ticker with Yahoo Finance
-	const isValid = await validateTicker(sanitizedTicker);
-	if (!isValid) {
-		return c.json({ error: "Invalid stock ticker" }, 400);
-	}
-
-	// For backfill competitions, fetch historical price from start date
-	// For regular competitions, fetch current price
-	let baselinePrice: number | null;
-	let currentPrice: number | null;
-
-	if (competition.backfill_mode) {
-		const startDate = new Date(competition.pick_window_start);
-		baselinePrice = await fetchHistoricalPrice(sanitizedTicker, startDate);
-		if (baselinePrice === null) {
-			return c.json(
-				{
-					error: `Could not fetch historical price for ${sanitizedTicker} on ${startDate.toDateString()}`,
-				},
-				400,
-			);
+	// Validate all tickers with Yahoo Finance
+	for (const t of sanitizedTickers) {
+		const isValid = await validateTicker(t);
+		if (!isValid) {
+			return c.json({ error: `Invalid stock ticker: ${t}` }, 400);
 		}
-		currentPrice = await fetchPrice(sanitizedTicker);
-	} else {
-		currentPrice = await fetchPrice(sanitizedTicker);
-		baselinePrice = currentPrice;
 	}
 
-	// Calculate percent change
-	const percentChange =
-		baselinePrice && currentPrice
-			? ((currentPrice - baselinePrice) / baselinePrice) * 100
-			: 0;
+	// Fetch prices for all tickers
+	const stockData: Array<{
+		ticker: string;
+		baselinePrice: number | null;
+		currentPrice: number | null;
+		percentChange: number;
+	}> = [];
 
-	const id = generateId();
+	for (const t of sanitizedTickers) {
+		let baselinePrice: number | null;
+		let currentPrice: number | null;
+
+		if (competition.backfill_mode) {
+			const startDate = new Date(competition.pick_window_start);
+			baselinePrice = await fetchHistoricalPrice(t, startDate);
+			if (baselinePrice === null) {
+				return c.json(
+					{
+						error: `Could not fetch historical price for ${t} on ${startDate.toDateString()}`,
+					},
+					400,
+				);
+			}
+			currentPrice = await fetchPrice(t);
+		} else {
+			currentPrice = await fetchPrice(t);
+			baselinePrice = currentPrice;
+		}
+
+		const percentChange =
+			baselinePrice && currentPrice
+				? ((currentPrice - baselinePrice) / baselinePrice) * 100
+				: 0;
+
+		stockData.push({ ticker: t, baselinePrice, currentPrice, percentChange });
+	}
+
+	// Calculate aggregate percent change
+	const avgPercentChange =
+		stockData.reduce((sum, s) => sum + s.percentChange, 0) / stockData.length;
+
+	// Create participant (ticker field kept for backwards compat, shows first ticker)
+	const participantId = generateId();
+	const firstStock = stockData[0]!; // Safe: we validated tickerList.length > 0 above
 	db.run(
 		`INSERT INTO participants (id, competition_id, name, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		[
-			id,
+			participantId,
 			competition.id,
 			sanitizedName,
-			sanitizedTicker,
-			baselinePrice,
-			currentPrice,
-			percentChange,
+			firstStock.ticker,
+			firstStock.baselinePrice,
+			firstStock.currentPrice,
+			avgPercentChange,
 		],
 	);
 
+	// Create portfolio stocks
+	for (const s of stockData) {
+		db.run(
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?)`,
+			[
+				generateId(),
+				participantId,
+				s.ticker,
+				s.baselinePrice,
+				s.currentPrice,
+				s.percentChange,
+			],
+		);
+	}
+
 	logAuditEvent(competition.id, "participant_joined", sanitizedName, {
-		ticker: sanitizedTicker,
+		tickers: sanitizedTickers,
 	});
 
 	const participant = db
 		.query(`SELECT * FROM participants WHERE id = ?`)
-		.get(id);
-	return c.json(participant, 201);
+		.get(participantId) as Record<string, unknown>;
+
+	// Get portfolio stocks for the response
+	const portfolioStocks = db
+		.query(`SELECT * FROM portfolio_stocks WHERE participant_id = ?`)
+		.all(participantId);
+
+	return c.json({ ...participant, portfolio: portfolioStocks }, 201);
 });
 
-// API: Update participant's ticker (with stricter rate limit)
+// API: Update participant's portfolio (with stricter rate limit)
 app.put("/api/participants/:id", writeLimiter, async (c) => {
 	const participantId = c.req.param("id");
 	const body = await c.req.json();
-	const { ticker } = body;
+	const { ticker, tickers } = body;
 
-	if (!ticker) {
-		return c.json({ error: "Missing required field: ticker" }, 400);
+	// Support both single ticker (backwards compat) and array of tickers
+	const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+
+	if (tickerList.length === 0) {
+		return c.json({ error: "Portfolio must contain at least 1 stock" }, 400);
 	}
 
-	// Validate ticker format (before Yahoo API call)
-	const tickerValidation = validateStringInput(
-		ticker,
-		"Ticker",
-		MAX_TICKER_LENGTH,
-	);
-	if (!tickerValidation.valid) {
-		return c.json({ error: tickerValidation.error }, 400);
+	if (tickerList.length > 10) {
+		return c.json({ error: "Portfolio cannot exceed 10 stocks" }, 400);
 	}
-	const sanitizedTicker = tickerValidation.sanitized.toUpperCase();
+
+	// Validate and sanitize all tickers
+	const sanitizedTickers: string[] = [];
+	for (const t of tickerList) {
+		const tickerValidation = validateStringInput(
+			t,
+			"Ticker",
+			MAX_TICKER_LENGTH,
+		);
+		if (!tickerValidation.valid) {
+			return c.json({ error: tickerValidation.error }, 400);
+		}
+		sanitizedTickers.push(tickerValidation.sanitized.toUpperCase());
+	}
+
+	// Check for duplicate tickers in the request
+	const uniqueTickers = new Set(sanitizedTickers);
+	if (uniqueTickers.size !== sanitizedTickers.length) {
+		return c.json({ error: "Portfolio cannot contain duplicate tickers" }, 400);
+	}
 
 	const participant = db
 		.query(`
@@ -472,36 +585,117 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 
 	if (isCompetitionLocked(participant)) {
 		return c.json(
-			{ error: "Competition is locked, cannot change ticker" },
+			{ error: "Competition is locked, cannot change portfolio" },
 			400,
 		);
 	}
 
-	// Validate ticker with Yahoo Finance
-	const isValid = await validateTicker(sanitizedTicker);
-	if (!isValid) {
-		return c.json({ error: "Invalid stock ticker" }, 400);
+	// Get current portfolio stocks
+	const currentStocks = db
+		.query(`SELECT ticker FROM portfolio_stocks WHERE participant_id = ?`)
+		.all(participantId) as Array<{ ticker: string }>;
+	const currentTickers = new Set(currentStocks.map((s) => s.ticker));
+
+	// Calculate adds and removes
+	const newTickers = new Set(sanitizedTickers);
+	const tickersToAdd = sanitizedTickers.filter((t) => !currentTickers.has(t));
+	const tickersToRemove = [...currentTickers].filter((t) => !newTickers.has(t));
+
+	// Validate new tickers with Yahoo Finance
+	for (const t of tickersToAdd) {
+		const isValid = await validateTicker(t);
+		if (!isValid) {
+			return c.json({ error: `Invalid stock ticker: ${t}` }, 400);
+		}
 	}
 
-	const oldTicker = participant.ticker;
+	// Fetch prices for new tickers (baseline from competition start)
+	const startDate = new Date(participant.pick_window_start);
 
-	// Fetch initial price
-	const currentPrice = await fetchPrice(sanitizedTicker);
+	for (const t of tickersToAdd) {
+		let baselinePrice: number | null;
+		let currentPrice: number | null;
 
+		if (participant.backfill_mode) {
+			baselinePrice = await fetchHistoricalPrice(t, startDate);
+			if (baselinePrice === null) {
+				return c.json(
+					{
+						error: `Could not fetch historical price for ${t} on ${startDate.toDateString()}`,
+					},
+					400,
+				);
+			}
+			currentPrice = await fetchPrice(t);
+		} else {
+			// For regular competitions, baseline from competition start
+			baselinePrice = await fetchHistoricalPrice(t, startDate);
+			if (baselinePrice === null) {
+				// If historical price not available, use current price
+				baselinePrice = await fetchPrice(t);
+			}
+			currentPrice = await fetchPrice(t);
+		}
+
+		const percentChange =
+			baselinePrice && currentPrice
+				? ((currentPrice - baselinePrice) / baselinePrice) * 100
+				: 0;
+
+		db.run(
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?)`,
+			[
+				generateId(),
+				participantId,
+				t,
+				baselinePrice,
+				currentPrice,
+				percentChange,
+			],
+		);
+	}
+
+	// Remove stocks
+	for (const t of tickersToRemove) {
+		db.run(
+			`DELETE FROM portfolio_stocks WHERE participant_id = ? AND ticker = ?`,
+			[participantId, t],
+		);
+	}
+
+	// Recalculate aggregate percent change
+	updateParticipantAggregate(participantId);
+
+	// Update the participant's ticker field (first ticker for backwards compat)
+	const firstTicker = sanitizedTickers[0]!; // Safe: we validated tickerList.length > 0 above
 	db.run(
-		`UPDATE participants SET ticker = ?, baseline_price = ?, current_price = ?, percent_change = 0, pick_date = datetime('now') WHERE id = ?`,
-		[sanitizedTicker, currentPrice, currentPrice, participantId],
+		`UPDATE participants SET ticker = ?, pick_date = datetime('now') WHERE id = ?`,
+		[firstTicker, participantId],
 	);
 
-	logAuditEvent(participant.competition_id, "pick_changed", participant.name, {
-		old_ticker: oldTicker,
-		new_ticker: sanitizedTicker,
-	});
+	// Log audit event if there were changes
+	if (tickersToAdd.length > 0 || tickersToRemove.length > 0) {
+		logAuditEvent(
+			participant.competition_id,
+			"portfolio_updated",
+			participant.name,
+			{
+				added: tickersToAdd,
+				removed: tickersToRemove,
+			},
+		);
+	}
 
 	const updated = db
 		.query(`SELECT * FROM participants WHERE id = ?`)
-		.get(participantId);
-	return c.json(updated);
+		.get(participantId) as Record<string, unknown>;
+
+	// Get updated portfolio stocks for the response
+	const portfolioStocks = db
+		.query(`SELECT * FROM portfolio_stocks WHERE participant_id = ?`)
+		.all(participantId);
+
+	return c.json({ ...updated, portfolio: portfolioStocks });
 });
 
 // API: Get leaderboard for a competition

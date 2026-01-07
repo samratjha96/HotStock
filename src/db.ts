@@ -96,6 +96,68 @@ db.run(`
   )
 `);
 
+// Portfolio stocks table - each participant can have up to 10 stocks
+db.run(`
+  CREATE TABLE IF NOT EXISTS portfolio_stocks (
+    id TEXT PRIMARY KEY,
+    participant_id TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    baseline_price REAL,
+    current_price REAL,
+    percent_change REAL,
+    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE,
+    UNIQUE(participant_id, ticker)
+  )
+`);
+
+db.run(
+	`CREATE INDEX IF NOT EXISTS idx_portfolio_stocks_participant ON portfolio_stocks(participant_id)`,
+);
+
+// Migration: Move existing participant tickers to portfolio_stocks table
+// Check if any participants have tickers that aren't in portfolio_stocks yet
+const participantsToMigrate = db
+	.query(`
+    SELECT p.id, p.ticker, p.baseline_price, p.current_price, p.percent_change, p.created_at
+    FROM participants p
+    WHERE p.ticker IS NOT NULL 
+      AND p.ticker != ''
+      AND NOT EXISTS (
+        SELECT 1 FROM portfolio_stocks ps WHERE ps.participant_id = p.id
+      )
+  `)
+	.all() as Array<{
+	id: string;
+	ticker: string;
+	baseline_price: number | null;
+	current_price: number | null;
+	percent_change: number | null;
+	created_at: string;
+}>;
+
+if (participantsToMigrate.length > 0) {
+	console.log(
+		`Migrating ${participantsToMigrate.length} participants to portfolio_stocks...`,
+	);
+	for (const p of participantsToMigrate) {
+		db.run(
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, added_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			[
+				crypto.randomUUID(),
+				p.id,
+				p.ticker,
+				p.baseline_price,
+				p.current_price,
+				p.percent_change,
+				p.created_at,
+			],
+		);
+	}
+	console.log("Migration complete.");
+}
+
 db.run(`
   CREATE TABLE IF NOT EXISTS audit_log (
     id TEXT PRIMARY KEY,
@@ -123,7 +185,8 @@ export type AuditAction =
 	| "unlock"
 	| "lock"
 	| "pick_changed"
-	| "participant_joined";
+	| "participant_joined"
+	| "portfolio_updated";
 
 export function logAuditEvent(
 	competitionId: string,

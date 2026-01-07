@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HotStock</title>
-  <link rel="stylesheet" href="/public/style.css?v=6">
+  <link rel="stylesheet" href="/public/style.css?v=7">
 </head>
 <body>
   <header>
@@ -86,8 +86,14 @@
           <input type="text" id="participant-name" required placeholder="John Doe">
         </div>
         <div class="form-group">
-          <label for="ticker">Stock Ticker</label>
-          <input type="text" id="ticker" required placeholder="AAPL" maxlength="10">
+          <label>Stock Portfolio <span class="label-hint">(1-10 stocks)</span></label>
+          <div id="portfolio-tickers" class="portfolio-tickers">
+            <div class="ticker-row">
+              <input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+              <button type="button" class="btn btn-small btn-remove-ticker" disabled>×</button>
+            </div>
+          </div>
+          <button type="button" id="add-ticker-btn" class="btn btn-small btn-secondary">+ Add Stock</button>
         </div>
         <div class="form-actions">
           <button type="button" id="cancel-join" class="btn btn-secondary">Cancel</button>
@@ -97,24 +103,27 @@
     </div>
   </div>
 
-  <!-- Edit Pick Modal -->
+  <!-- Edit Portfolio Modal -->
   <div id="edit-modal" class="modal hidden">
     <div class="modal-content">
-      <h2>Change Your Pick</h2>
+      <h2>Edit Portfolio</h2>
       <form id="edit-form">
         <input type="hidden" id="edit-participant-id">
         <div class="form-group">
-          <label for="edit-ticker">New Stock Ticker</label>
-          <input type="text" id="edit-ticker" required placeholder="AAPL" maxlength="10">
+          <label>Stock Portfolio <span class="label-hint">(1-10 stocks)</span></label>
+          <div id="edit-portfolio-tickers" class="portfolio-tickers">
+            <!-- Populated dynamically -->
+          </div>
+          <button type="button" id="edit-add-ticker-btn" class="btn btn-small btn-secondary">+ Add Stock</button>
         </div>
         <div class="form-actions">
           <button type="button" id="cancel-edit" class="btn btn-secondary">Cancel</button>
-          <button type="submit" class="btn btn-primary">Update Pick</button>
+          <button type="submit" class="btn btn-primary">Update Portfolio</button>
         </div>
       </form>
     </div>
   </div>
 
-  <script src="/public/app.js?v=7"></script>
+  <script src="/public/app.js?v=8"></script>
 </body>
 </html>

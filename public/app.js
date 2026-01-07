@@ -295,7 +295,11 @@ async function renderCompetitionDetail(slug) {
 	document.querySelectorAll(".edit-pick-btn").forEach((btn) => {
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			showEditModal(btn.dataset.id, btn.dataset.ticker);
+			const tickers = JSON.parse(btn.dataset.tickers || "[]");
+			showEditModal(
+				btn.dataset.id,
+				tickers.length > 0 ? tickers : [btn.dataset.ticker],
+			);
 		});
 	});
 }
@@ -311,9 +315,7 @@ function renderParticipantsTable(participants, canEdit) {
         <tr>
           <th>#</th>
           <th>Name</th>
-          <th>Ticker</th>
-          <th>Baseline</th>
-          <th>Current</th>
+          <th>Portfolio</th>
           <th>Change</th>
           ${canEdit ? "<th></th>" : ""}
         </tr>
@@ -325,15 +327,13 @@ function renderParticipantsTable(participants, canEdit) {
           <tr class="${i === 0 && p.percent_change !== null ? "rank-1" : ""}">
             <td><span class="rank-cell">${i + 1}</span></td>
             <td>${escapeHtml(p.name)}</td>
-            <td><span class="ticker-symbol">${escapeHtml(p.ticker)}</span></td>
-            <td>${p.baseline_price ? `$${p.baseline_price.toFixed(2)}` : "—"}</td>
-            <td>${p.current_price ? `$${p.current_price.toFixed(2)}` : "—"}</td>
+            <td>${renderPortfolioTickers(p.portfolio || [{ ticker: p.ticker }])}</td>
             <td class="${p.percent_change >= 0 ? "gain" : "loss"}">
               ${formatPercent(p.percent_change)}
             </td>
             ${
 							canEdit
-								? `<td><button class="btn btn-small btn-secondary edit-pick-btn" data-id="${p.id}" data-ticker="${p.ticker}">Edit</button></td>`
+								? `<td><button class="btn btn-small btn-secondary edit-pick-btn" data-id="${p.id}" data-tickers='${JSON.stringify((p.portfolio || []).map((s) => s.ticker))}'>Edit</button></td>`
 								: ""
 						}
           </tr>
@@ -343,6 +343,28 @@ function renderParticipantsTable(participants, canEdit) {
       </tbody>
     </table>
   `;
+}
+
+// Render portfolio tickers with expand/collapse for many stocks
+function renderPortfolioTickers(portfolio) {
+	if (!portfolio || portfolio.length === 0) return "—";
+
+	const tickers = portfolio.map((s) => s.ticker);
+	const maxShow = 3;
+
+	if (tickers.length <= maxShow) {
+		return `<div class="portfolio-tickers-display">
+			${tickers.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join("")}
+		</div>`;
+	}
+
+	const visible = tickers.slice(0, maxShow);
+	const hidden = tickers.slice(maxShow);
+
+	return `<div class="portfolio-tickers-display">
+		${visible.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join("")}
+		<button class="portfolio-expand-btn" title="${hidden.join(", ")}">+${hidden.length} more</button>
+	</div>`;
 }
 
 // Navigation
@@ -402,6 +424,15 @@ function hideCreateModal() {
 }
 
 function showJoinModal() {
+	// Reset to single ticker input
+	const container = document.getElementById("portfolio-tickers");
+	container.innerHTML = `
+		<div class="ticker-row">
+			<input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+			<button type="button" class="btn btn-small btn-remove-ticker" disabled>×</button>
+		</div>
+	`;
+	updateRemoveButtons(container);
 	joinModal.classList.remove("hidden");
 }
 
@@ -410,15 +441,82 @@ function hideJoinModal() {
 	document.getElementById("join-form").reset();
 }
 
-function showEditModal(participantId, currentTicker) {
+function showEditModal(participantId, portfolioTickers) {
 	document.getElementById("edit-participant-id").value = participantId;
-	document.getElementById("edit-ticker").value = currentTicker;
+
+	// Populate with current portfolio tickers
+	const container = document.getElementById("edit-portfolio-tickers");
+	const tickers = Array.isArray(portfolioTickers)
+		? portfolioTickers
+		: [portfolioTickers];
+
+	container.innerHTML = tickers
+		.map(
+			(ticker) => `
+		<div class="ticker-row">
+			<input type="text" class="ticker-input" value="${escapeHtml(ticker)}" placeholder="AAPL" maxlength="10">
+			<button type="button" class="btn btn-small btn-remove-ticker">×</button>
+		</div>
+	`,
+		)
+		.join("");
+
+	updateRemoveButtons(container);
 	editModal.classList.remove("hidden");
 }
 
 function hideEditModal() {
 	editModal.classList.add("hidden");
 	document.getElementById("edit-form").reset();
+}
+
+// Portfolio ticker management helpers
+function addTickerRow(container) {
+	const rows = container.querySelectorAll(".ticker-row");
+	if (rows.length >= 10) {
+		alert("Maximum 10 stocks per portfolio");
+		return;
+	}
+
+	const newRow = document.createElement("div");
+	newRow.className = "ticker-row";
+	newRow.innerHTML = `
+		<input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+		<button type="button" class="btn btn-small btn-remove-ticker">×</button>
+	`;
+	container.appendChild(newRow);
+	updateRemoveButtons(container);
+	newRow.querySelector(".ticker-input").focus();
+}
+
+function removeTickerRow(button) {
+	const container = button.closest(".portfolio-tickers");
+	const rows = container.querySelectorAll(".ticker-row");
+	if (rows.length <= 1) return; // Keep at least one
+
+	button.closest(".ticker-row").remove();
+	updateRemoveButtons(container);
+}
+
+function updateRemoveButtons(container) {
+	const rows = container.querySelectorAll(".ticker-row");
+	const buttons = container.querySelectorAll(".btn-remove-ticker");
+
+	buttons.forEach((btn) => {
+		btn.disabled = rows.length <= 1;
+	});
+}
+
+function getTickersFromContainer(container) {
+	const inputs = container.querySelectorAll(".ticker-input");
+	const tickers = [];
+	for (const input of inputs) {
+		const value = input.value.trim().toUpperCase();
+		if (value) {
+			tickers.push(value);
+		}
+	}
+	return tickers;
 }
 
 // Helper to format date for datetime-local input (must be in local time)
@@ -453,10 +551,33 @@ function formatAuditEvent(entry) {
 			return `<span class="audit-action audit-unlock">Unlocked for editing</span> <span class="audit-time">${time}</span>`;
 		case "lock":
 			return `<span class="audit-action audit-lock">Competition locked</span> <span class="audit-time">${time}</span>`;
-		case "participant_joined":
-			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> joined with <span class="ticker-symbol">${escapeHtml(details?.ticker || "?")}</span> <span class="audit-time">${time}</span>`;
+		case "participant_joined": {
+			// Support both old single ticker and new array format
+			const tickers =
+				details?.tickers || (details?.ticker ? [details.ticker] : ["?"]);
+			const tickersHtml = tickers
+				.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`)
+				.join(" ");
+			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> joined with ${tickersHtml} <span class="audit-time">${time}</span>`;
+		}
 		case "pick_changed":
 			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> <span class="audit-action audit-pick-changed">changed pick</span> from <span class="ticker-symbol">${escapeHtml(details?.old_ticker || "?")}</span> to <span class="ticker-symbol">${escapeHtml(details?.new_ticker || "?")}</span> <span class="audit-time">${time}</span>`;
+		case "portfolio_updated": {
+			const added = details?.added || [];
+			const removed = details?.removed || [];
+			const changes = [];
+			if (added.length > 0) {
+				changes.push(
+					`+${added.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join(" +")}`,
+				);
+			}
+			if (removed.length > 0) {
+				changes.push(
+					`-${removed.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join(" -")}`,
+				);
+			}
+			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> <span class="audit-action audit-pick-changed">updated portfolio</span>: ${changes.join(" ")} <span class="audit-time">${time}</span>`;
+		}
 		default:
 			return `Unknown action: ${entry.action} <span class="audit-time">${time}</span>`;
 	}
@@ -613,9 +734,17 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 document.getElementById("join-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
+	const container = document.getElementById("portfolio-tickers");
+	const tickers = getTickersFromContainer(container);
+
+	if (tickers.length === 0) {
+		alert("Please enter at least one stock ticker");
+		return;
+	}
+
 	const data = {
 		name: document.getElementById("participant-name").value,
-		ticker: document.getElementById("ticker").value.toUpperCase(),
+		tickers: tickers,
 	};
 
 	const result = await API.joinCompetition(currentCompetitionSlug, data);
@@ -633,9 +762,15 @@ document.getElementById("edit-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
 	const participantId = document.getElementById("edit-participant-id").value;
-	const ticker = document.getElementById("edit-ticker").value.toUpperCase();
+	const container = document.getElementById("edit-portfolio-tickers");
+	const tickers = getTickersFromContainer(container);
 
-	const result = await API.updateParticipant(participantId, { ticker });
+	if (tickers.length === 0) {
+		alert("Portfolio must contain at least one stock");
+		return;
+	}
+
+	const result = await API.updateParticipant(participantId, { tickers });
 
 	if (result.error) {
 		alert(result.error);
@@ -648,3 +783,19 @@ document.getElementById("edit-form").addEventListener("submit", async (e) => {
 
 // Initial render - check URL hash first
 handleHashChange();
+
+// Portfolio ticker add/remove button handlers
+document.getElementById("add-ticker-btn").addEventListener("click", () => {
+	addTickerRow(document.getElementById("portfolio-tickers"));
+});
+
+document.getElementById("edit-add-ticker-btn").addEventListener("click", () => {
+	addTickerRow(document.getElementById("edit-portfolio-tickers"));
+});
+
+// Event delegation for remove ticker buttons
+document.addEventListener("click", (e) => {
+	if (e.target.classList.contains("btn-remove-ticker") && !e.target.disabled) {
+		removeTickerRow(e.target);
+	}
+});
