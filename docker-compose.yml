@@ -5,7 +5,7 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      - "8787:3000"
     volumes:
       - stock-data:/app/data
     environment:
