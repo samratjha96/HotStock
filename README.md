@@ -1,15 +1,25 @@
-# stock-picker-madness
+# HotStock
 
-To install dependencies:
+Put your money where your mouth is. A web app for running stock picking competitions among friends.
+
+## Quick Start
 
 ```bash
 bun install
+bun run index.ts
+# Visit http://localhost:3000
 ```
 
-To run:
+## Docker Deployment
 
 ```bash
-bun run index.ts
+docker compose up --build
+# Visit http://localhost:3000
 ```
 
-This project was created using `bun init` in bun v1.3.5. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+## Tech Stack
+
+- **Runtime**: Bun
+- **Backend**: Hono
+- **Database**: SQLite
+- **Frontend**: Vanilla HTML/CSS/JS

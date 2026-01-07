@@ -4,7 +4,7 @@ This document provides essential context for AI agents working on this codebase.
 
 ## Project Overview
 
-**Stock Picker Madness** is a web app for running stock picking competitions among friends. Users create competitions with a pick window, participants join by selecting a stock ticker, and the leaderboard tracks performance based on real stock price changes.
+**HotStock** is a web app for running stock picking competitions among friends. Users create competitions with a pick window, participants join by selecting a stock ticker, and the leaderboard tracks performance based on real stock price changes.
 
 ## Tech Stack
 
