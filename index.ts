@@ -3,7 +3,7 @@
 
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { db, generateId } from "./src/db";
+import { db, generateId, generateSlug } from "./src/db";
 import { fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
@@ -29,13 +29,32 @@ function isCompetitionLocked(competition: { pick_window_end: string }): boolean 
   return now > end;
 }
 
-// API: List all competitions
+// Helper to find competition by slug or ID
+function findCompetition(slugOrId: string) {
+  // First try by slug (more common for shared URLs)
+  let competition = db.query(`SELECT * FROM competitions WHERE slug = ?`).get(slugOrId);
+  if (!competition) {
+    // Fall back to ID lookup for backwards compatibility
+    competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(slugOrId);
+  }
+  return competition as {
+    id: string;
+    name: string;
+    slug: string;
+    pick_window_start: string;
+    pick_window_end: string;
+    created_at: string;
+  } | null;
+}
+
+// API: List all competitions (only locked ones are public)
 app.get("/api/competitions", (c) => {
   const competitions = db.query(`
     SELECT c.*, 
            COUNT(p.id) as participant_count
     FROM competitions c
     LEFT JOIN participants p ON p.competition_id = c.id
+    WHERE c.pick_window_end < datetime('now')
     GROUP BY c.id
     ORDER BY c.created_at DESC
   `).all();
@@ -62,9 +81,10 @@ app.post("/api/competitions", async (c) => {
   }
 
   const id = generateId();
+  const slug = generateSlug();
   db.run(
-    `INSERT INTO competitions (id, name, pick_window_start, pick_window_end) VALUES (?, ?, ?, ?)`,
-    [id, name, pick_window_start, pick_window_end]
+    `INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end) VALUES (?, ?, ?, ?, ?)`,
+    [id, name, slug, pick_window_start, pick_window_end]
   );
 
   const competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(id);
@@ -72,15 +92,9 @@ app.post("/api/competitions", async (c) => {
 });
 
 // API: Get competition details with participants
-app.get("/api/competitions/:id", (c) => {
-  const id = c.req.param("id");
-  const competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(id) as {
-    id: string;
-    name: string;
-    pick_window_start: string;
-    pick_window_end: string;
-    created_at: string;
-  } | null;
+app.get("/api/competitions/:slugOrId", (c) => {
+  const slugOrId = c.req.param("slugOrId");
+  const competition = findCompetition(slugOrId);
 
   if (!competition) {
     return c.json({ error: "Competition not found" }, 404);
@@ -90,7 +104,7 @@ app.get("/api/competitions/:id", (c) => {
     SELECT * FROM participants 
     WHERE competition_id = ? 
     ORDER BY percent_change DESC NULLS LAST, name ASC
-  `).all(id);
+  `).all(competition.id);
 
   return c.json({
     ...competition,
@@ -101,8 +115,8 @@ app.get("/api/competitions/:id", (c) => {
 });
 
 // API: Join competition
-app.post("/api/competitions/:id/join", async (c) => {
-  const competitionId = c.req.param("id");
+app.post("/api/competitions/:slugOrId/join", async (c) => {
+  const slugOrId = c.req.param("slugOrId");
   const body = await c.req.json();
   const { name, ticker } = body;
 
@@ -110,11 +124,7 @@ app.post("/api/competitions/:id/join", async (c) => {
     return c.json({ error: "Missing required fields: name, ticker" }, 400);
   }
 
-  const competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(competitionId) as {
-    id: string;
-    pick_window_start: string;
-    pick_window_end: string;
-  } | null;
+  const competition = findCompetition(slugOrId);
 
   if (!competition) {
     return c.json({ error: "Competition not found" }, 404);
@@ -127,7 +137,7 @@ app.post("/api/competitions/:id/join", async (c) => {
   // Check if name is already taken in this competition
   const existing = db.query(
     `SELECT id FROM participants WHERE competition_id = ? AND LOWER(name) = LOWER(?)`
-  ).get(competitionId, name);
+  ).get(competition.id, name);
 
   if (existing) {
     return c.json({ error: "Name already taken in this competition" }, 400);
@@ -145,7 +155,7 @@ app.post("/api/competitions/:id/join", async (c) => {
   const id = generateId();
   db.run(
     `INSERT INTO participants (id, competition_id, name, ticker, current_price) VALUES (?, ?, ?, ?, ?)`,
-    [id, competitionId, name, ticker.toUpperCase(), currentPrice]
+    [id, competition.id, name, ticker.toUpperCase(), currentPrice]
   );
 
   const participant = db.query(`SELECT * FROM participants WHERE id = ?`).get(id);
@@ -201,9 +211,9 @@ app.put("/api/participants/:id", async (c) => {
 });
 
 // API: Get leaderboard for a competition
-app.get("/api/competitions/:id/leaderboard", (c) => {
-  const id = c.req.param("id");
-  const competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(id);
+app.get("/api/competitions/:slugOrId/leaderboard", (c) => {
+  const slugOrId = c.req.param("slugOrId");
+  const competition = findCompetition(slugOrId);
 
   if (!competition) {
     return c.json({ error: "Competition not found" }, 404);
@@ -214,7 +224,7 @@ app.get("/api/competitions/:id/leaderboard", (c) => {
     FROM participants 
     WHERE competition_id = ? 
     ORDER BY percent_change DESC NULLS LAST, name ASC
-  `).all(id) as Array<Record<string, unknown>>;
+  `).all(competition.id) as Array<Record<string, unknown>>;
 
   return c.json({
     competition,
@@ -226,18 +236,15 @@ app.get("/api/competitions/:id/leaderboard", (c) => {
 });
 
 // API: Manually trigger price update for a competition
-app.post("/api/competitions/:id/refresh-prices", async (c) => {
-  const id = c.req.param("id");
-  const competition = db.query(`SELECT * FROM competitions WHERE id = ?`).get(id) as {
-    id: string;
-    pick_window_end: string;
-  } | null;
+app.post("/api/competitions/:slugOrId/refresh-prices", async (c) => {
+  const slugOrId = c.req.param("slugOrId");
+  const competition = findCompetition(slugOrId);
 
   if (!competition) {
     return c.json({ error: "Competition not found" }, 404);
   }
 
-  const participants = db.query(`SELECT * FROM participants WHERE competition_id = ?`).all(id) as Array<{
+  const participants = db.query(`SELECT * FROM participants WHERE competition_id = ?`).all(competition.id) as Array<{
     id: string;
     ticker: string;
     baseline_price: number | null;

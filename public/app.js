@@ -1,5 +1,5 @@
 // ABOUTME: Frontend JavaScript for stock-picker-madness
-// ABOUTME: Handles UI interactions, API calls, and page navigation
+// ABOUTME: Handles UI interactions, API calls, and URL-based navigation
 
 const API = {
   async getCompetitions() {
@@ -16,13 +16,13 @@ const API = {
     return res.json();
   },
 
-  async getCompetition(id) {
-    const res = await fetch(`/api/competitions/${id}`);
+  async getCompetition(slugOrId) {
+    const res = await fetch(`/api/competitions/${slugOrId}`);
     return res.json();
   },
 
-  async joinCompetition(competitionId, data) {
-    const res = await fetch(`/api/competitions/${competitionId}/join`, {
+  async joinCompetition(slugOrId, data) {
+    const res = await fetch(`/api/competitions/${slugOrId}/join`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -39,8 +39,8 @@ const API = {
     return res.json();
   },
 
-  async refreshPrices(competitionId) {
-    const res = await fetch(`/api/competitions/${competitionId}/refresh-prices`, {
+  async refreshPrices(slugOrId) {
+    const res = await fetch(`/api/competitions/${slugOrId}/refresh-prices`, {
       method: "POST",
     });
     return res.json();
@@ -48,7 +48,7 @@ const API = {
 };
 
 // State
-let currentCompetitionId = null;
+let currentCompetitionSlug = null;
 
 // DOM Elements
 const homeSection = document.getElementById("home-section");
@@ -105,7 +105,7 @@ async function renderCompetitions() {
     .map((comp) => {
       const status = getStatus(comp);
       return `
-        <div class="competition-card" data-id="${comp.id}">
+        <div class="competition-card" data-slug="${comp.slug}">
           <h3>${escapeHtml(comp.name)}</h3>
           <p class="meta">
             <span class="status-badge ${status.class}">${status.text}</span>
@@ -122,14 +122,14 @@ async function renderCompetitions() {
   // Add click handlers
   document.querySelectorAll(".competition-card").forEach((card) => {
     card.addEventListener("click", () => {
-      showCompetition(card.dataset.id);
+      showCompetition(card.dataset.slug);
     });
   });
 }
 
 // Render competition detail
-async function renderCompetitionDetail(id) {
-  const comp = await API.getCompetition(id);
+async function renderCompetitionDetail(slug) {
+  const comp = await API.getCompetition(slug);
 
   if (comp.error) {
     competitionDetail.innerHTML = `<p class="error">${comp.error}</p>`;
@@ -137,6 +137,7 @@ async function renderCompetitionDetail(id) {
   }
 
   const status = getStatus(comp);
+  const shareUrl = `${window.location.origin}/#${comp.slug}`;
 
   competitionDetail.innerHTML = `
     <div class="competition-detail-header">
@@ -145,6 +146,11 @@ async function renderCompetitionDetail(id) {
       <p class="window-info">
         Pick window: ${formatDate(comp.pick_window_start)} — ${formatDate(comp.pick_window_end)}
       </p>
+      <div class="share-url">
+        <label>Share this competition:</label>
+        <input type="text" readonly value="${shareUrl}" id="share-url-input" onclick="this.select()">
+        <button id="copy-url-btn" class="btn btn-small btn-secondary">Copy</button>
+      </div>
       <div class="action-buttons">
         ${comp.is_pick_window_open ? '<button id="join-btn" class="btn btn-primary">Join Competition</button>' : ""}
         <button id="refresh-btn" class="btn btn-success">Refresh Prices</button>
@@ -168,8 +174,19 @@ async function renderCompetitionDetail(id) {
     refreshBtn.addEventListener("click", async () => {
       refreshBtn.textContent = "Refreshing...";
       refreshBtn.disabled = true;
-      await API.refreshPrices(id);
-      await renderCompetitionDetail(id);
+      await API.refreshPrices(slug);
+      await renderCompetitionDetail(slug);
+    });
+  }
+
+  const copyBtn = document.getElementById("copy-url-btn");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", () => {
+      const input = document.getElementById("share-url-input");
+      input.select();
+      navigator.clipboard.writeText(input.value);
+      copyBtn.textContent = "Copied!";
+      setTimeout(() => { copyBtn.textContent = "Copy"; }, 2000);
     });
   }
 
@@ -229,18 +246,35 @@ function renderParticipantsTable(participants, canEdit) {
 
 // Navigation
 function showHome() {
-  currentCompetitionId = null;
+  currentCompetitionSlug = null;
+  window.location.hash = "";
   homeSection.classList.remove("hidden");
   competitionSection.classList.add("hidden");
   renderCompetitions();
 }
 
-function showCompetition(id) {
-  currentCompetitionId = id;
+function showCompetition(slug) {
+  currentCompetitionSlug = slug;
+  window.location.hash = slug;
   homeSection.classList.add("hidden");
   competitionSection.classList.remove("hidden");
-  renderCompetitionDetail(id);
+  renderCompetitionDetail(slug);
 }
+
+// Handle URL hash changes (browser back/forward, direct links)
+function handleHashChange() {
+  const hash = window.location.hash.slice(1); // Remove the # prefix
+  if (hash) {
+    currentCompetitionSlug = hash;
+    homeSection.classList.add("hidden");
+    competitionSection.classList.remove("hidden");
+    renderCompetitionDetail(hash);
+  } else {
+    showHome();
+  }
+}
+
+window.addEventListener("hashchange", handleHashChange);
 
 // Modal handlers
 function showCreateModal() {
@@ -326,7 +360,7 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
   }
 
   hideCreateModal();
-  showCompetition(result.id);
+  showCompetition(result.slug);
 });
 
 document.getElementById("join-form").addEventListener("submit", async (e) => {
@@ -337,7 +371,7 @@ document.getElementById("join-form").addEventListener("submit", async (e) => {
     ticker: document.getElementById("ticker").value.toUpperCase(),
   };
 
-  const result = await API.joinCompetition(currentCompetitionId, data);
+  const result = await API.joinCompetition(currentCompetitionSlug, data);
 
   if (result.error) {
     alert(result.error);
@@ -345,7 +379,7 @@ document.getElementById("join-form").addEventListener("submit", async (e) => {
   }
 
   hideJoinModal();
-  renderCompetitionDetail(currentCompetitionId);
+  renderCompetitionDetail(currentCompetitionSlug);
 });
 
 document.getElementById("edit-form").addEventListener("submit", async (e) => {
@@ -362,8 +396,8 @@ document.getElementById("edit-form").addEventListener("submit", async (e) => {
   }
 
   hideEditModal();
-  renderCompetitionDetail(currentCompetitionId);
+  renderCompetitionDetail(currentCompetitionSlug);
 });
 
-// Initial render
-renderCompetitions();
+// Initial render - check URL hash first
+handleHashChange();
