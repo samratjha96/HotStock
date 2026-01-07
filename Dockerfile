@@ -1,4 +1,4 @@
-# ABOUTME: Dockerfile for stock-picker-madness
+# ABOUTME: Dockerfile for HotStock
 # ABOUTME: Builds a minimal container using Bun runtime
 
 FROM oven/bun:1 AS base
@@ -17,7 +17,7 @@ RUN mkdir -p /app/data
 # Expose port
 EXPOSE 3000
 
-# Run the app
+# Run the app via startup script (seeds demo data first)
 ENV NODE_ENV=production
 ENV DB_PATH=/app/data/stock-picker.db
-CMD ["bun", "run", "index.ts"]
+CMD ["./start.sh"]

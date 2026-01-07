@@ -1,55 +1,31 @@
-// ABOUTME: Seeds the database with sample competition data for testing
-// ABOUTME: Simulates a competition from June 30, 2025 being viewed today
+// ABOUTME: Seeds the database with a Demo competition for first-time users
+// ABOUTME: Idempotent - only seeds if Demo competition doesn't exist
 
-import { Database } from "bun:sqlite";
+// Import db to ensure schema is created before seeding
+import { db } from "./src/db";
 
-const DB_PATH = process.env.DB_PATH || "./data/stock-picker.db";
-const db = new Database(DB_PATH);
-
-// Clear existing data
-console.log("Clearing existing data...");
-db.run("DELETE FROM price_history");
-db.run("DELETE FROM participants");
-db.run("DELETE FROM competitions");
-
-// Ensure slug column exists (migration for existing databases)
-try {
-  db.run("ALTER TABLE competitions ADD COLUMN slug TEXT");
-} catch {
-  // Column already exists, ignore
-}
-try {
-  db.run("CREATE UNIQUE INDEX IF NOT EXISTS idx_competitions_slug ON competitions(slug)");
-} catch {
-  // Index already exists, ignore
+// Check if Demo competition already exists
+const existingDemo = db.query("SELECT id FROM competitions WHERE name = 'Demo'").get();
+if (existingDemo) {
+  console.log("Demo competition already exists, skipping seed.");
+  db.close();
+  process.exit(0);
 }
 
-// Helper to generate short slug
-function generateSlug(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let slug = "";
-  for (let i = 0; i < 8; i++) {
-    slug += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return slug;
-}
+console.log("Creating Demo competition...");
 
-// Competition: "Summer 2025 Stock Showdown"
-// Pick window: June 30, 2025 00:00 - July 1, 2025 23:59
-// Today is January 7, 2026 - competition has been running ~6 months
-
+// Demo competition with a closed pick window to show leaderboard functionality
 const competitionId = crypto.randomUUID();
-const competitionSlug = generateSlug();
+const competitionSlug = "demo";
 const competition = {
   id: competitionId,
-  name: "Summer 2025 Stock Showdown",
+  name: "Demo",
   slug: competitionSlug,
   pick_window_start: "2025-06-30T00:00:00Z",
   pick_window_end: "2025-07-01T23:59:59Z",
   created_at: "2025-06-29T12:00:00Z",
 };
 
-console.log("Creating competition:", competition.name);
 console.log("  Slug:", competition.slug);
 db.run(
   `INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, created_at) 

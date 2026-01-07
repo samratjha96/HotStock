@@ -1,4 +1,4 @@
-# ABOUTME: Docker Compose configuration for stock-picker-madness
+# ABOUTME: Docker Compose configuration for HotStock
 # ABOUTME: Single command deployment with persistent SQLite storage
 
 services:
