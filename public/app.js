@@ -192,10 +192,9 @@ async function renderCompetitionDetail(slug) {
       <span class="status-badge ${status.class}">${status.text}</span>
       ${
 				comp.is_backfill
-					? `<p class="window-info">Started: ${formatDate(comp.pick_window_start)}</p>`
+					? baselineInfo
 					: `<p class="window-info">Pick window: ${formatDate(comp.pick_window_start)} — ${formatDate(comp.pick_window_end)}</p>`
 			}
-      ${baselineInfo}
       <div class="share-url">
         <label>Share this competition:</label>
         <input type="text" readonly value="${shareUrl}" id="share-url-input" onclick="this.select()">
