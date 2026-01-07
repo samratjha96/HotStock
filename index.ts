@@ -66,25 +66,23 @@ async function refreshPricesIfNeeded(competition: { id: string; pick_window_end:
     baseline_price: number | null;
   }>;
 
-  const isLocked = isCompetitionLocked(competition);
-
   for (const participant of participants) {
     const price = await fetchPrice(participant.ticker);
     if (price === null) continue;
 
-    if (isLocked && participant.baseline_price === null) {
+    if (participant.baseline_price === null) {
+      // No baseline yet - set both baseline and current to same price
       db.run(
         `UPDATE participants SET baseline_price = ?, current_price = ?, percent_change = 0 WHERE id = ?`,
         [price, price, participant.id]
       );
-    } else if (participant.baseline_price !== null) {
+    } else {
+      // Has baseline - update current price and calculate change
       const percentChange = ((price - participant.baseline_price) / participant.baseline_price) * 100;
       db.run(
         `UPDATE participants SET current_price = ?, percent_change = ? WHERE id = ?`,
         [price, percentChange, participant.id]
       );
-    } else {
-      db.run(`UPDATE participants SET current_price = ? WHERE id = ?`, [price, participant.id]);
     }
 
     db.run(
