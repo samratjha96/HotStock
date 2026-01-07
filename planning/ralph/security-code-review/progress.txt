@@ -1,0 +1,37 @@
+# Progress: security-code-review
+
+Started: 2026-01-07
+
+## Status
+Biome linter/formatter configured and passing. Next: remove unused code.
+
+## Done When Checklist
+- [x] Biome installed and configured with lint + format scripts
+- [x] `bunx biome check .` passes with no errors
+- [ ] All unused code removed
+- [ ] Rate limiting middleware active on all endpoints
+- [ ] PUT `/api/participants/:id` has ownership verification
+- [ ] Input validation on all string inputs (max length)
+- [ ] All SQL queries verified as parameterized
+- [ ] `docker compose build && docker compose up` works
+- [ ] Manual smoke test: create competition, join, update pick, view leaderboard
+
+## Progress Log
+
+### 2026-01-07 - Setup
+- Created feature folder structure
+- Generated spec from requirements interview
+- Ready for first iteration
+
+### 2026-01-07 - Iteration 1: Biome Setup
+- Installed @biomejs/biome@2.3.11 as dev dependency
+- Initialized biome.json with recommended rules
+- Added npm scripts: lint, lint:fix, format
+- Fixed lint issues:
+  - Added radix parameter to parseInt()
+  - Replaced isNaN() with Number.isNaN()
+  - Added node: protocol to fs/path imports
+  - Added biome-ignore comments for safe non-null assertions
+- Formatted all source files (tabs, consistent style)
+- Verified Docker build still works
+- Committed: fdfb8cf

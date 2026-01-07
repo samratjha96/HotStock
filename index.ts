@@ -3,10 +3,41 @@
 
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
+import { rateLimiter } from "hono-rate-limiter";
 import { db, generateId, generateSlug } from "./src/db";
 import { fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
+
+// Helper to get client IP for rate limiting
+function getClientIP(c: {
+	req: { header: (name: string) => string | undefined };
+}): string {
+	return (
+		c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||
+		c.req.header("x-real-ip") ||
+		"unknown"
+	);
+}
+
+// Global rate limiter: 100 requests per minute per IP
+const globalLimiter = rateLimiter({
+	windowMs: 60 * 1000,
+	limit: 100,
+	keyGenerator: getClientIP,
+	message: { error: "Too many requests, please try again later" },
+});
+
+// Stricter rate limiter for write endpoints: 10 requests per minute per IP
+const writeLimiter = rateLimiter({
+	windowMs: 60 * 1000,
+	limit: 10,
+	keyGenerator: getClientIP,
+	message: { error: "Too many write requests, please slow down" },
+});
+
+// Apply global rate limiter to all API routes
+app.use("/api/*", globalLimiter);
 
 // Price cache: stores last refresh time per competition
 const priceCache = new Map<string, number>();
@@ -127,8 +158,8 @@ app.get("/api/competitions", (c) => {
 	return c.json(competitions);
 });
 
-// API: Create a competition
-app.post("/api/competitions", async (c) => {
+// API: Create a competition (with stricter rate limit)
+app.post("/api/competitions", writeLimiter, async (c) => {
 	const body = await c.req.json();
 	const { name, pick_window_start, pick_window_end } = body;
 
@@ -196,8 +227,8 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 	});
 });
 
-// API: Join competition
-app.post("/api/competitions/:slugOrId/join", async (c) => {
+// API: Join competition (with stricter rate limit)
+app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 	const slugOrId = c.req.param("slugOrId");
 	const body = await c.req.json();
 	const { name, ticker } = body;
@@ -259,8 +290,8 @@ app.post("/api/competitions/:slugOrId/join", async (c) => {
 	return c.json(participant, 201);
 });
 
-// API: Update participant's ticker
-app.put("/api/participants/:id", async (c) => {
+// API: Update participant's ticker (with stricter rate limit)
+app.put("/api/participants/:id", writeLimiter, async (c) => {
 	const participantId = c.req.param("id");
 	const body = await c.req.json();
 	const { ticker } = body;

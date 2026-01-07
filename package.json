@@ -16,6 +16,7 @@
 		"typescript": "^5"
 	},
 	"dependencies": {
-		"hono": "^4.11.3"
+		"hono": "^4.11.3",
+		"hono-rate-limiter": "^0.5.3"
 	}
 }

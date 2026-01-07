@@ -1,0 +1,33 @@
+You are hardening the HotStock project (feature: security-code-review). Make incremental progress toward completing this feature.
+
+You are running in a loop - this is iteration $ITERATION of $TOTAL. You don't need to finish everything in one go. Make meaningful progress, and if you reach a natural stopping point, it's OK to stop and let the next iteration continue.
+
+## Context
+- planning/ralph/security-code-review/spec.md: Full specification for this feature
+- planning/ralph/security-code-review/progress.txt: What's done and what's next
+
+## Process
+1. Read spec and progress to understand current state
+2. Identify the next logical step from the "Done When" checklist
+3. Implement the change
+4. Verify it works (run linter, test endpoint, etc.)
+5. Commit changes with a clear message
+6. Append your progress to planning/ralph/security-code-review/progress.txt
+
+## Rules
+- Use `bun` for all package management (not npm/yarn)
+- Use `bunx` for running tools (not npx)
+- Commit after each logical change
+- Keep changes minimal and focused
+- Verify Docker still works after dependency changes: `docker compose build`
+- Use subagents for independent parallel work when appropriate
+
+## Important Notes
+- The existing code is working - don't break it
+- Focus on the security/cleanup tasks, not new features
+- If you're unsure about a change, err on the side of caution
+- Check the spec for specific implementation guidance
+
+## Signals
+- Append `<promise>COMPLETE</promise>` to progress.txt ONLY when ALL items in "Done When" are checked off
+- Append `<promise>BLOCKED</promise>` with description if stuck and need human help
