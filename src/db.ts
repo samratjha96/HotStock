@@ -96,6 +96,18 @@ db.run(`
   )
 `);
 
+db.run(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY,
+    competition_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_name TEXT,
+    details TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (competition_id) REFERENCES competitions(id)
+  )
+`);
+
 // Create indexes for common queries
 db.run(
 	`CREATE INDEX IF NOT EXISTS idx_participants_competition ON participants(competition_id)`,
@@ -103,6 +115,62 @@ db.run(
 db.run(
 	`CREATE INDEX IF NOT EXISTS idx_price_history_ticker ON price_history(ticker)`,
 );
+db.run(
+	`CREATE INDEX IF NOT EXISTS idx_audit_log_competition ON audit_log(competition_id)`,
+);
+
+export type AuditAction =
+	| "unlock"
+	| "lock"
+	| "pick_changed"
+	| "participant_joined";
+
+export function logAuditEvent(
+	competitionId: string,
+	action: AuditAction,
+	actorName: string | null,
+	details: Record<string, unknown> | null,
+): void {
+	const id = generateId();
+	db.run(
+		`INSERT INTO audit_log (id, competition_id, action, actor_name, details) VALUES (?, ?, ?, ?, ?)`,
+		[
+			id,
+			competitionId,
+			action,
+			actorName,
+			details ? JSON.stringify(details) : null,
+		],
+	);
+}
+
+export interface AuditLogEntry {
+	id: string;
+	competition_id: string;
+	action: AuditAction;
+	actor_name: string | null;
+	details: string | null;
+	created_at: string;
+}
+
+export function getAuditLog(
+	competitionId: string,
+	limit: number,
+	offset: number,
+): AuditLogEntry[] {
+	return db
+		.query(
+			`SELECT * FROM audit_log WHERE competition_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		)
+		.all(competitionId, limit, offset) as AuditLogEntry[];
+}
+
+export function getAuditLogCount(competitionId: string): number {
+	const result = db
+		.query(`SELECT COUNT(*) as count FROM audit_log WHERE competition_id = ?`)
+		.get(competitionId) as { count: number };
+	return result.count;
+}
 
 export function generateId(): string {
 	return crypto.randomUUID();

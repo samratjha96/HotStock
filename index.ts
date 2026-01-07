@@ -4,7 +4,14 @@
 import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { rateLimiter } from "hono-rate-limiter";
-import { db, generateId, generateSlug } from "./src/db";
+import {
+	db,
+	generateId,
+	generateSlug,
+	logAuditEvent,
+	getAuditLog,
+	getAuditLogCount,
+} from "./src/db";
 import { fetchHistoricalPrice, fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
@@ -409,6 +416,10 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		],
 	);
 
+	logAuditEvent(competition.id, "participant_joined", sanitizedName, {
+		ticker: sanitizedTicker,
+	});
+
 	const participant = db
 		.query(`SELECT * FROM participants WHERE id = ?`)
 		.get(id);
@@ -438,16 +449,21 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 
 	const participant = db
 		.query(`
-    SELECT p.*, c.pick_window_start, c.pick_window_end 
+    SELECT p.*, c.pick_window_start, c.pick_window_end, c.id as comp_id, c.backfill_mode, c.finalized
     FROM participants p
     JOIN competitions c ON c.id = p.competition_id
     WHERE p.id = ?
   `)
 		.get(participantId) as {
 		id: string;
+		name: string;
+		ticker: string;
 		competition_id: string;
+		comp_id: string;
 		pick_window_start: string;
 		pick_window_end: string;
+		backfill_mode: number;
+		finalized: number;
 	} | null;
 
 	if (!participant) {
@@ -467,6 +483,8 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		return c.json({ error: "Invalid stock ticker" }, 400);
 	}
 
+	const oldTicker = participant.ticker;
+
 	// Fetch initial price
 	const currentPrice = await fetchPrice(sanitizedTicker);
 
@@ -474,6 +492,11 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		`UPDATE participants SET ticker = ?, baseline_price = ?, current_price = ?, percent_change = 0, pick_date = datetime('now') WHERE id = ?`,
 		[sanitizedTicker, currentPrice, currentPrice, participantId],
 	);
+
+	logAuditEvent(participant.competition_id, "pick_changed", participant.name, {
+		old_ticker: oldTicker,
+		new_ticker: sanitizedTicker,
+	});
 
 	const updated = db
 		.query(`SELECT * FROM participants WHERE id = ?`)
@@ -546,6 +569,8 @@ app.post("/api/competitions/:slugOrId/finalize", writeLimiter, async (c) => {
 		competition.id,
 	]);
 
+	logAuditEvent(competition.id, "lock", null, null);
+
 	const updated = db
 		.query(`SELECT * FROM competitions WHERE id = ?`)
 		.get(competition.id);
@@ -576,10 +601,36 @@ app.post("/api/competitions/:slugOrId/unfinalize", writeLimiter, async (c) => {
 		competition.id,
 	]);
 
+	logAuditEvent(competition.id, "unlock", null, null);
+
 	const updated = db
 		.query(`SELECT * FROM competitions WHERE id = ?`)
 		.get(competition.id);
 	return c.json(updated);
+});
+
+// API: Get audit log for a competition (with pagination)
+app.get("/api/competitions/:slugOrId/audit-log", (c) => {
+	const slugOrId = c.req.param("slugOrId");
+	const competition = findCompetition(slugOrId);
+
+	if (!competition) {
+		return c.json({ error: "Competition not found" }, 404);
+	}
+
+	const limit = Math.min(parseInt(c.req.query("limit") || "20", 10), 100);
+	const offset = parseInt(c.req.query("offset") || "0", 10);
+
+	const entries = getAuditLog(competition.id, limit, offset);
+	const total = getAuditLogCount(competition.id);
+
+	return c.json({
+		entries,
+		total,
+		limit,
+		offset,
+		has_more: offset + entries.length < total,
+	});
 });
 
 const PORT = parseInt(process.env.PORT || "3000", 10);

@@ -52,6 +52,13 @@ const API = {
 		});
 		return res.json();
 	},
+
+	async getAuditLog(slugOrId, limit = 20, offset = 0) {
+		const res = await fetch(
+			`/api/competitions/${slugOrId}/audit-log?limit=${limit}&offset=${offset}`,
+		);
+		return res.json();
+	},
 };
 
 // State
@@ -203,7 +210,23 @@ async function renderCompetitionDetail(slug) {
       <h3>Leaderboard</h3>
       ${renderParticipantsTable(comp.participants, comp.can_join)}
     </div>
+
+    <div id="audit-log-container"></div>
   `;
+
+	// Fetch and render audit log
+	API.getAuditLog(slug).then((auditData) => {
+		const container = document.getElementById("audit-log-container");
+		if (container && !auditData.error) {
+			container.innerHTML = renderAuditLogSection(
+				auditData.entries,
+				auditData.total,
+				auditData.has_more,
+				slug,
+			);
+			attachAuditLogHandlers(slug);
+		}
+	});
 
 	// Add event handlers
 	const joinBtn = document.getElementById("join-btn");
@@ -402,6 +425,93 @@ function escapeHtml(text) {
 	const div = document.createElement("div");
 	div.textContent = text;
 	return div.innerHTML;
+}
+
+// Format audit event for display
+function formatAuditEvent(entry) {
+	const time = formatDate(entry.created_at);
+	let details;
+	try {
+		details = entry.details ? JSON.parse(entry.details) : null;
+	} catch {
+		details = null;
+	}
+
+	switch (entry.action) {
+		case "unlock":
+			return `<span class="audit-action audit-unlock">Unlocked for editing</span> <span class="audit-time">${time}</span>`;
+		case "lock":
+			return `<span class="audit-action audit-lock">Competition locked</span> <span class="audit-time">${time}</span>`;
+		case "participant_joined":
+			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> joined with <span class="ticker-symbol">${escapeHtml(details?.ticker || "?")}</span> <span class="audit-time">${time}</span>`;
+		case "pick_changed":
+			return `<span class="audit-actor">${escapeHtml(entry.actor_name || "Someone")}</span> <span class="audit-action audit-pick-changed">changed pick</span> from <span class="ticker-symbol">${escapeHtml(details?.old_ticker || "?")}</span> to <span class="ticker-symbol">${escapeHtml(details?.new_ticker || "?")}</span> <span class="audit-time">${time}</span>`;
+		default:
+			return `Unknown action: ${entry.action} <span class="audit-time">${time}</span>`;
+	}
+}
+
+// Render audit log section
+function renderAuditLogSection(entries, total, hasMore, slug) {
+	if (total === 0) {
+		return `
+			<details class="audit-log-section">
+				<summary class="audit-log-toggle">Activity History</summary>
+				<div class="audit-log-content">
+					<p class="audit-empty">No activity recorded yet.</p>
+				</div>
+			</details>
+		`;
+	}
+
+	const entriesHtml = entries
+		.map((entry) => `<li class="audit-entry">${formatAuditEvent(entry)}</li>`)
+		.join("");
+
+	return `
+		<details class="audit-log-section">
+			<summary class="audit-log-toggle">Activity History <span class="audit-count">${total}</span></summary>
+			<div class="audit-log-content">
+				<ul class="audit-log-list">${entriesHtml}</ul>
+				${hasMore ? `<button class="btn btn-small btn-secondary audit-load-more" data-slug="${slug}" data-offset="${entries.length}">Load more</button>` : ""}
+			</div>
+		</details>
+	`;
+}
+
+// Attach event handlers for audit log load more
+function attachAuditLogHandlers(slug) {
+	const loadMoreBtn = document.querySelector(".audit-load-more");
+	if (loadMoreBtn) {
+		loadMoreBtn.addEventListener("click", async () => {
+			const offset = parseInt(loadMoreBtn.dataset.offset, 10);
+			loadMoreBtn.textContent = "Loading...";
+			loadMoreBtn.disabled = true;
+
+			const auditData = await API.getAuditLog(slug, 20, offset);
+			if (auditData.error) {
+				loadMoreBtn.textContent = "Load more";
+				loadMoreBtn.disabled = false;
+				return;
+			}
+
+			const list = document.querySelector(".audit-log-list");
+			const newEntriesHtml = auditData.entries
+				.map(
+					(entry) => `<li class="audit-entry">${formatAuditEvent(entry)}</li>`,
+				)
+				.join("");
+			list.insertAdjacentHTML("beforeend", newEntriesHtml);
+
+			if (auditData.has_more) {
+				loadMoreBtn.dataset.offset = offset + auditData.entries.length;
+				loadMoreBtn.textContent = "Load more";
+				loadMoreBtn.disabled = false;
+			} else {
+				loadMoreBtn.remove();
+			}
+		});
+	}
 }
 
 // Event Listeners

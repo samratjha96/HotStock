@@ -654,3 +654,96 @@ input:focus-visible {
 	background: var(--primary-orange);
 	color: white;
 }
+
+/* === AUDIT LOG === */
+.audit-log-section {
+	margin-top: 1.5rem;
+}
+
+.audit-log-toggle {
+	font-size: 0.85rem;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0.5rem 0;
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	user-select: none;
+}
+
+.audit-log-toggle:hover {
+	color: var(--text-dark);
+}
+
+.audit-log-toggle::marker {
+	color: var(--text-muted);
+}
+
+.audit-count {
+	background: var(--bg-light);
+	color: var(--text-muted);
+	font-size: 0.7rem;
+	padding: 0.15rem 0.5rem;
+	border-radius: 10px;
+	font-weight: 600;
+}
+
+.audit-log-content {
+	padding: 0.75rem 0;
+	border-top: 1px solid #eee;
+}
+
+.audit-log-list {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.audit-entry {
+	padding: 0.5rem 0;
+	font-size: 0.85rem;
+	color: var(--text-dark);
+	border-bottom: 1px solid #f0f0f0;
+	line-height: 1.5;
+}
+
+.audit-entry:last-child {
+	border-bottom: none;
+}
+
+.audit-actor {
+	font-weight: 600;
+	color: var(--primary-blue);
+}
+
+.audit-action {
+	font-weight: 500;
+}
+
+.audit-action.audit-unlock {
+	color: var(--primary-orange);
+}
+
+.audit-action.audit-lock {
+	color: var(--success-green);
+}
+
+.audit-action.audit-pick-changed {
+	color: var(--danger-red);
+}
+
+.audit-time {
+	color: var(--text-muted);
+	font-size: 0.75rem;
+	margin-left: 0.5rem;
+}
+
+.audit-empty {
+	color: var(--text-muted);
+	font-size: 0.85rem;
+	font-style: italic;
+}
+
+.audit-load-more {
+	margin-top: 0.75rem;
+}
