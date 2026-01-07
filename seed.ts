@@ -30,8 +30,8 @@ const competition = {
 
 console.log("  Slug:", competition.slug);
 db.run(
-	`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, created_at) 
-   VALUES (?, ?, ?, ?, ?, ?)`,
+	`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, created_at, backfill_mode, finalized) 
+   VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
 	[
 		competition.id,
 		competition.name,
