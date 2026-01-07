@@ -4,17 +4,57 @@
 
 ---
 
-## Next Steps
-- Initialize Bun project with package.json
-- Set up Hono server with basic routing
-- Create SQLite database schema
-- Build API endpoints
-- Create frontend pages
-- Add Yahoo Finance price fetching
-- Set up Docker Compose
+## Completed
+
+### 2026-01-07 - Full MVP Implementation
+
+Built complete working MVP with all core features:
+
+**Backend:**
+- Hono server with REST API endpoints
+- SQLite database with competitions, participants, price_history tables
+- Yahoo Finance integration with user-agent rotation and caching
+- All API endpoints: create competition, join, update pick, leaderboard, refresh prices
+
+**Frontend:**
+- Vanilla HTML/CSS/JS served by Hono
+- Competition list and detail views
+- Modals for creating competitions and joining
+- Leaderboard with rank highlighting
+- Edit pick functionality (when window open)
+
+**Infrastructure:**
+- Dockerfile using official Bun image
+- docker-compose.yml with persistent volume for SQLite
+
+**Verified Working:**
+- Server starts and responds to API calls
+- Yahoo Finance price fetching works (tested with AAPL: $261.82)
+- All CRUD operations for competitions and participants
+- Pick window open/closed logic enforced
 
 ---
 
-## Completed
+## MVP Checklist Status
 
-(Nothing yet - ready to start building)
+- [x] Can create a competition with name and pick window dates
+- [x] Participants can join by entering name and stock ticker
+- [x] Picks are editable until lock date, then frozen (enforced)
+- [x] Baseline price is stored when window closes (via refresh-prices endpoint)
+- [x] Daily/manual price fetch updates all current prices
+- [x] Leaderboard displays participants ranked by % gain
+- [ ] Everything runs with `docker-compose up` (Docker daemon was not running to verify)
+
+---
+
+## Next Steps
+
+- Verify Docker deployment works when Docker daemon is available
+- Consider adding a cron-like mechanism for automatic daily price updates (optional enhancement)
+
+---
+
+## Notes
+
+- Docker build could not be tested because Docker daemon wasn't running on the dev machine
+- The MVP is functionally complete - all features work via `bun run index.ts`
