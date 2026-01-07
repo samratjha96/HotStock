@@ -43,18 +43,38 @@ Built complete working MVP with all core features:
 - [x] Baseline price is stored when window closes (via refresh-prices endpoint)
 - [x] Daily/manual price fetch updates all current prices
 - [x] Leaderboard displays participants ranked by % gain
-- [ ] Everything runs with `docker-compose up` (Docker daemon was not running to verify)
+- [x] Everything runs with `docker-compose up`
 
 ---
 
-## Next Steps
+### 2026-01-07 - Docker Deployment Verified
 
-- Verify Docker deployment works when Docker daemon is available
-- Consider adding a cron-like mechanism for automatic daily price updates (optional enhancement)
+Successfully verified `docker-compose up` deployment:
+- Docker build completes successfully using `oven/bun:1` base image
+- Container starts and app runs on port 3000
+- All API endpoints working (competitions, join, leaderboard, refresh-prices)
+- Frontend served correctly
+- Yahoo Finance price fetching works (AAPL: $262.01)
+- SQLite database with persistent volume working
 
 ---
 
-## Notes
+## MVP Complete
 
-- Docker build could not be tested because Docker daemon wasn't running on the dev machine
-- The MVP is functionally complete - all features work via `bun run index.ts`
+All checklist items verified:
+- [x] Can create a competition with name and pick window dates
+- [x] Participants can join by entering name and stock ticker  
+- [x] Picks are editable until lock date, then frozen (enforced)
+- [x] Baseline price is stored when window closes (via refresh-prices endpoint)
+- [x] Daily/manual price fetch updates all current prices
+- [x] Leaderboard displays participants ranked by % gain
+- [x] Everything runs with `docker-compose up`
+
+---
+
+## Future Enhancements (Not MVP)
+
+- Add cron-like mechanism for automatic daily price updates
+- Add authentication if needed
+
+<promise>COMPLETE</promise>
