@@ -3,7 +3,7 @@
 Started: 2026-01-07
 
 ## Status
-Input validation and SQL audit complete. Next: Docker verification and smoke test.
+COMPLETE - All security hardening tasks finished.
 
 ## Done When Checklist
 - [x] Biome installed and configured with lint + format scripts
@@ -13,8 +13,8 @@ Input validation and SQL audit complete. Next: Docker verification and smoke tes
 - [x] PUT `/api/participants/:id` has ownership verification
 - [x] Input validation on all string inputs (max length)
 - [x] All SQL queries verified as parameterized
-- [ ] `docker compose build && docker compose up` works
-- [ ] Manual smoke test: create competition, join, update pick, view leaderboard
+- [x] `docker compose build && docker compose up` works
+- [x] Manual smoke test: create competition, join, update pick, view leaderboard
 
 ## Progress Log
 
@@ -76,3 +76,26 @@ Input validation and SQL audit complete. Next: Docker verification and smoke tes
 - Biome check passes
 - Docker build verified
 - Committed: d368833
+
+### 2026-01-07 - Iteration 5: Final Verification & Smoke Test
+- Verified Docker deployment works:
+  - `docker compose build` succeeds
+  - `docker compose up -d` starts container correctly
+  - Server responds on port 8787 (mapped from internal 3000)
+- Manual smoke test completed successfully:
+  - Listed existing competitions via GET /api/competitions
+  - Created new "Security Test Competition" via POST
+  - Joined competition with stock pick (AAPL) - fetched live price from Yahoo
+  - Tested ownership verification:
+    - Update without name → 400 error (correct)
+    - Update with wrong name → 403 error (correct)
+    - Update with correct name → success (correct)
+  - Updated pick from AAPL to GOOGL successfully
+  - Viewed competition details with leaderboard
+  - Verified input validation:
+    - Name > 50 chars → rejected with clear error
+    - HTML tags in name → stripped (XSS prevented)
+  - Confirmed rate limiting allows normal traffic
+- All security hardening tasks complete
+
+<promise>COMPLETE</promise>
