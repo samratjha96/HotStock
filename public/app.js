@@ -75,7 +75,7 @@ const createModal = document.getElementById("create-modal");
 const joinModal = document.getElementById("join-modal");
 const editModal = document.getElementById("edit-modal");
 
-// Format date for display
+// Format date for display (converts UTC to local timezone)
 function formatDate(isoString) {
 	return new Date(isoString).toLocaleDateString("en-US", {
 		month: "short",
@@ -86,12 +86,15 @@ function formatDate(isoString) {
 	});
 }
 
-// Format date without time (for backfill competitions)
+// Format date without time, showing UTC date (for backfill competitions)
+// This prevents timezone shift - user picks Jan 1, they see Jan 1
 function formatDateOnly(isoString) {
-	return new Date(isoString).toLocaleDateString("en-US", {
+	const date = new Date(isoString);
+	return date.toLocaleDateString("en-US", {
 		month: "short",
 		day: "numeric",
 		year: "numeric",
+		timeZone: "UTC",
 	});
 }
 
