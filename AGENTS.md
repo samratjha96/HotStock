@@ -49,7 +49,17 @@ SQLite schema lives in `src/db.ts`. When adding columns:
 - Never break existing databases
 - Example pattern (see `src/db.ts` for slug migration)
 
-### 4. API Routes
+### 4. Seed Script Must Stay Updated
+The `seed.ts` script creates demo data for fresh deployments. It must be idempotent and work with the current schema.
+
+**After any database schema changes:**
+1. Update `seed.ts` to include all new columns in INSERT statements
+2. Test with a fresh database: `rm -f ./data/stock-picker.db && bun run seed.ts`
+3. Verify the seeded data works: `bun run index.ts` and check http://localhost:3000
+
+The seed script is run automatically on container startup (via `start.sh`) when no database exists.
+
+### 5. API Routes
 All API routes are in `index.ts`:
 - `GET /api/competitions` - List competitions
 - `POST /api/competitions` - Create competition
@@ -58,7 +68,7 @@ All API routes are in `index.ts`:
 - `PUT /api/participants/:id` - Update participant's pick
 - `POST /api/competitions/:slugOrId/refresh-prices` - Refresh stock prices
 
-### 5. Frontend
+### 6. Frontend
 Static files served from `public/`:
 - `index.html` - Single page app
 - `style.css` - March Madness tournament theme
