@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Picker Madness</title>
+  <link rel="stylesheet" href="/public/style.css">
+</head>
+<body>
+  <header>
+    <h1>📈 Stock Picker Madness</h1>
+    <p>Pick a stock. Beat your friends.</p>
+  </header>
+
+  <main>
+    <section id="home-section">
+      <div class="section-header">
+        <h2>Competitions</h2>
+        <button id="new-competition-btn" class="btn btn-primary">+ New Competition</button>
+      </div>
+      <div id="competitions-list" class="competitions-list">
+        <p class="loading">Loading competitions...</p>
+      </div>
+    </section>
+
+    <section id="competition-section" class="hidden">
+      <button id="back-btn" class="btn btn-secondary">← Back to Home</button>
+      <div id="competition-detail"></div>
+    </section>
+  </main>
+
+  <!-- Create Competition Modal -->
+  <div id="create-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Create Competition</h2>
+      <form id="create-form">
+        <div class="form-group">
+          <label for="comp-name">Competition Name</label>
+          <input type="text" id="comp-name" required placeholder="Q1 2026 Stock Challenge">
+        </div>
+        <div class="form-group">
+          <label for="pick-start">Pick Window Opens</label>
+          <input type="datetime-local" id="pick-start" required>
+        </div>
+        <div class="form-group">
+          <label for="pick-end">Pick Window Closes</label>
+          <input type="datetime-local" id="pick-end" required>
+        </div>
+        <div class="form-actions">
+          <button type="button" id="cancel-create" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Join Competition Modal -->
+  <div id="join-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Join Competition</h2>
+      <form id="join-form">
+        <div class="form-group">
+          <label for="participant-name">Your Name</label>
+          <input type="text" id="participant-name" required placeholder="John Doe">
+        </div>
+        <div class="form-group">
+          <label for="ticker">Stock Ticker</label>
+          <input type="text" id="ticker" required placeholder="AAPL" maxlength="10">
+        </div>
+        <div class="form-actions">
+          <button type="button" id="cancel-join" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Join</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Pick Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Change Your Pick</h2>
+      <form id="edit-form">
+        <input type="hidden" id="edit-participant-id">
+        <div class="form-group">
+          <label for="edit-ticker">New Stock Ticker</label>
+          <input type="text" id="edit-ticker" required placeholder="AAPL" maxlength="10">
+        </div>
+        <div class="form-actions">
+          <button type="button" id="cancel-edit" class="btn btn-secondary">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Pick</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/public/app.js"></script>
+</body>
+</html>
