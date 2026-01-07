@@ -3,7 +3,7 @@
 Started: 2026-01-07
 
 ## Status
-Ownership verification complete. Next: input validation on string inputs.
+Input validation and SQL audit complete. Next: Docker verification and smoke test.
 
 ## Done When Checklist
 - [x] Biome installed and configured with lint + format scripts
@@ -11,8 +11,8 @@ Ownership verification complete. Next: input validation on string inputs.
 - [x] All unused code removed
 - [x] Rate limiting middleware active on all endpoints
 - [x] PUT `/api/participants/:id` has ownership verification
-- [ ] Input validation on all string inputs (max length)
-- [ ] All SQL queries verified as parameterized
+- [x] Input validation on all string inputs (max length)
+- [x] All SQL queries verified as parameterized
 - [ ] `docker compose build && docker compose up` works
 - [ ] Manual smoke test: create competition, join, update pick, view leaderboard
 
@@ -61,3 +61,18 @@ Ownership verification complete. Next: input validation on string inputs.
   - Update with case-different name → success (case-insensitive)
 - Verified Docker build still works
 - Committed: 49530d4
+
+### 2026-01-07 - Iteration 4: Input Validation & SQL Audit
+- Added validateStringInput() helper function for string validation
+- Implemented input validation on all string inputs:
+  - Competition name: max 100 chars, HTML tags stripped
+  - Participant name: max 50 chars, HTML tags stripped
+  - Ticker: max 10 chars, HTML tags stripped (also validated by Yahoo API)
+- Sanitization includes trimming whitespace and removing HTML tags for XSS prevention
+- Audited all SQL queries in index.ts and src/db.ts:
+  - All 17 queries in index.ts use parameterized statements (? placeholders)
+  - All queries in src/db.ts are either static schema DDL or parameterized
+  - No SQL injection vulnerabilities found
+- Biome check passes
+- Docker build verified
+- Committed: d368833

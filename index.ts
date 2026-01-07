@@ -9,6 +9,40 @@ import { fetchPrice, validateTicker } from "./src/yahoo";
 
 const app = new Hono();
 
+// Input validation constants
+const MAX_COMPETITION_NAME_LENGTH = 100;
+const MAX_PARTICIPANT_NAME_LENGTH = 50;
+const MAX_TICKER_LENGTH = 10;
+
+// Validate string input: checks max length and strips HTML/script tags
+function validateStringInput(
+	value: unknown,
+	fieldName: string,
+	maxLength: number,
+): { valid: true; sanitized: string } | { valid: false; error: string } {
+	if (typeof value !== "string") {
+		return { valid: false, error: `${fieldName} must be a string` };
+	}
+
+	const trimmed = value.trim();
+
+	if (trimmed.length === 0) {
+		return { valid: false, error: `${fieldName} cannot be empty` };
+	}
+
+	if (trimmed.length > maxLength) {
+		return {
+			valid: false,
+			error: `${fieldName} must be ${maxLength} characters or less`,
+		};
+	}
+
+	// Basic sanitization: remove HTML tags to prevent XSS
+	const sanitized = trimmed.replace(/<[^>]*>/g, "");
+
+	return { valid: true, sanitized };
+}
+
 // Helper to get client IP for rate limiting
 function getClientIP(c: {
 	req: { header: (name: string) => string | undefined };
@@ -173,6 +207,17 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 		);
 	}
 
+	// Validate competition name
+	const nameValidation = validateStringInput(
+		name,
+		"Competition name",
+		MAX_COMPETITION_NAME_LENGTH,
+	);
+	if (!nameValidation.valid) {
+		return c.json({ error: nameValidation.error }, 400);
+	}
+	const sanitizedName = nameValidation.sanitized;
+
 	// Validate dates
 	const startDate = new Date(pick_window_start);
 	const endDate = new Date(pick_window_end);
@@ -187,7 +232,7 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 	const slug = generateSlug();
 	db.run(
 		`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end) VALUES (?, ?, ?, ?, ?)`,
-		[id, name, slug, pick_window_start, pick_window_end],
+		[id, sanitizedName, slug, pick_window_start, pick_window_end],
 	);
 
 	const competition = db
@@ -237,6 +282,28 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		return c.json({ error: "Missing required fields: name, ticker" }, 400);
 	}
 
+	// Validate participant name
+	const nameValidation = validateStringInput(
+		name,
+		"Participant name",
+		MAX_PARTICIPANT_NAME_LENGTH,
+	);
+	if (!nameValidation.valid) {
+		return c.json({ error: nameValidation.error }, 400);
+	}
+	const sanitizedName = nameValidation.sanitized;
+
+	// Validate ticker format (before Yahoo API call)
+	const tickerValidation = validateStringInput(
+		ticker,
+		"Ticker",
+		MAX_TICKER_LENGTH,
+	);
+	if (!tickerValidation.valid) {
+		return c.json({ error: tickerValidation.error }, 400);
+	}
+	const sanitizedTicker = tickerValidation.sanitized.toUpperCase();
+
 	const competition = findCompetition(slugOrId);
 
 	if (!competition) {
@@ -255,20 +322,20 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		.query(
 			`SELECT id FROM participants WHERE competition_id = ? AND LOWER(name) = LOWER(?)`,
 		)
-		.get(competition.id, name);
+		.get(competition.id, sanitizedName);
 
 	if (existing) {
 		return c.json({ error: "Name already taken in this competition" }, 400);
 	}
 
 	// Validate ticker with Yahoo Finance
-	const isValid = await validateTicker(ticker.toUpperCase());
+	const isValid = await validateTicker(sanitizedTicker);
 	if (!isValid) {
 		return c.json({ error: "Invalid stock ticker" }, 400);
 	}
 
 	// Fetch initial price
-	const currentPrice = await fetchPrice(ticker.toUpperCase());
+	const currentPrice = await fetchPrice(sanitizedTicker);
 
 	const id = generateId();
 	db.run(
@@ -276,8 +343,8 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		[
 			id,
 			competition.id,
-			name,
-			ticker.toUpperCase(),
+			sanitizedName,
+			sanitizedTicker,
 			currentPrice,
 			currentPrice,
 			0,
@@ -307,6 +374,28 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		);
 	}
 
+	// Validate name input (for ownership verification)
+	const nameValidation = validateStringInput(
+		name,
+		"Name",
+		MAX_PARTICIPANT_NAME_LENGTH,
+	);
+	if (!nameValidation.valid) {
+		return c.json({ error: nameValidation.error }, 400);
+	}
+	const sanitizedName = nameValidation.sanitized;
+
+	// Validate ticker format (before Yahoo API call)
+	const tickerValidation = validateStringInput(
+		ticker,
+		"Ticker",
+		MAX_TICKER_LENGTH,
+	);
+	if (!tickerValidation.valid) {
+		return c.json({ error: tickerValidation.error }, 400);
+	}
+	const sanitizedTicker = tickerValidation.sanitized.toUpperCase();
+
 	const participant = db
 		.query(`
     SELECT p.*, c.pick_window_start, c.pick_window_end 
@@ -327,7 +416,7 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 	}
 
 	// Ownership verification: name must match (case-insensitive)
-	if (participant.name.toLowerCase() !== name.toLowerCase()) {
+	if (participant.name.toLowerCase() !== sanitizedName.toLowerCase()) {
 		return c.json({ error: "Name does not match. Access denied." }, 403);
 	}
 
@@ -338,18 +427,18 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		);
 	}
 
-	// Validate ticker
-	const isValid = await validateTicker(ticker.toUpperCase());
+	// Validate ticker with Yahoo Finance
+	const isValid = await validateTicker(sanitizedTicker);
 	if (!isValid) {
 		return c.json({ error: "Invalid stock ticker" }, 400);
 	}
 
 	// Fetch initial price
-	const currentPrice = await fetchPrice(ticker.toUpperCase());
+	const currentPrice = await fetchPrice(sanitizedTicker);
 
 	db.run(
 		`UPDATE participants SET ticker = ?, baseline_price = ?, current_price = ?, percent_change = 0, pick_date = datetime('now') WHERE id = ?`,
-		[ticker.toUpperCase(), currentPrice, currentPrice, participantId],
+		[sanitizedTicker, currentPrice, currentPrice, participantId],
 	);
 
 	const updated = db
