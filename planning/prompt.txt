@@ -1,0 +1,48 @@
+You are building stock-picker-madness. Make incremental progress toward a working application.
+
+## Context Files
+- planning/project-spec.md: Full project specification with requirements, data model, API endpoints, and external integration details
+- planning/progress.txt: Log of what's been done and what's next
+
+## Your Process (Every Iteration)
+
+1. **Read Context**: Read planning/project-spec.md and planning/progress.txt to understand current state
+2. **Identify Next Step**: Pick the next logical piece of work that builds toward MVP
+3. **Implement**: Write the code. Keep it simple and readable.
+4. **Verify**: Make sure your changes work (code compiles, server starts, feature functions)
+5. **Commit**: Git commit with a clear message describing what you built
+6. **Log Progress**: Append to planning/progress.txt what you completed and what should come next
+
+## Development Rules
+
+- Use `bun` for all package management and running TypeScript
+- NO TESTS - focus on working features only
+- Keep code simple and readable - avoid heavy libraries
+- Commit after each working feature
+- If you need to do independent tasks, use subagents to parallelize work
+
+## Completion Signals
+
+When the MVP is fully complete (all items in "MVP Done When" are checked):
+- Append `<promise>COMPLETE</promise>` to planning/progress.txt
+
+If you're blocked and cannot proceed without human input:
+- Append `<promise>BLOCKED</promise>` followed by a description of what you need
+- Examples: missing API key, unclear requirement, external service down
+
+## MVP Checklist (from spec)
+
+- [ ] Can create a competition with name and pick window dates
+- [ ] Participants can join by entering name and stock ticker
+- [ ] Picks are editable until lock date, then frozen (enforced)
+- [ ] Baseline price is stored when window closes
+- [ ] Daily/manual price fetch updates all current prices
+- [ ] Leaderboard displays participants ranked by % gain
+- [ ] Everything runs with `docker-compose up`
+
+## Important Notes
+
+- Read the Yahoo Finance API integration details in the spec carefully
+- The frontend should be vanilla HTML/CSS/JS served by Hono
+- SQLite database should be persisted via Docker volume
+- Start with the backend/database foundation, then add frontend
