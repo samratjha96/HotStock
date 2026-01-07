@@ -294,10 +294,17 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 app.put("/api/participants/:id", writeLimiter, async (c) => {
 	const participantId = c.req.param("id");
 	const body = await c.req.json();
-	const { ticker } = body;
+	const { ticker, name } = body;
 
 	if (!ticker) {
 		return c.json({ error: "Missing required field: ticker" }, 400);
+	}
+
+	if (!name) {
+		return c.json(
+			{ error: "Missing required field: name (for ownership verification)" },
+			400,
+		);
 	}
 
 	const participant = db
@@ -309,6 +316,7 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
   `)
 		.get(participantId) as {
 		id: string;
+		name: string;
 		competition_id: string;
 		pick_window_start: string;
 		pick_window_end: string;
@@ -316,6 +324,11 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 
 	if (!participant) {
 		return c.json({ error: "Participant not found" }, 404);
+	}
+
+	// Ownership verification: name must match (case-insensitive)
+	if (participant.name.toLowerCase() !== name.toLowerCase()) {
+		return c.json({ error: "Name does not match. Access denied." }, 403);
 	}
 
 	if (isCompetitionLocked(participant)) {

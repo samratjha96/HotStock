@@ -379,9 +379,10 @@ document.getElementById("edit-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
 	const participantId = document.getElementById("edit-participant-id").value;
+	const name = document.getElementById("edit-name").value;
 	const ticker = document.getElementById("edit-ticker").value.toUpperCase();
 
-	const result = await API.updateParticipant(participantId, { ticker });
+	const result = await API.updateParticipant(participantId, { name, ticker });
 
 	if (result.error) {
 		alert(result.error);
