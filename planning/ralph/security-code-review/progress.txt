@@ -3,13 +3,13 @@
 Started: 2026-01-07
 
 ## Status
-Biome linter/formatter configured and passing. Next: remove unused code.
+Rate limiting middleware implemented. Next: ownership verification for participant updates.
 
 ## Done When Checklist
 - [x] Biome installed and configured with lint + format scripts
 - [x] `bunx biome check .` passes with no errors
-- [ ] All unused code removed
-- [ ] Rate limiting middleware active on all endpoints
+- [x] All unused code removed
+- [x] Rate limiting middleware active on all endpoints
 - [ ] PUT `/api/participants/:id` has ownership verification
 - [ ] Input validation on all string inputs (max length)
 - [ ] All SQL queries verified as parameterized
@@ -35,3 +35,15 @@ Biome linter/formatter configured and passing. Next: remove unused code.
 - Formatted all source files (tabs, consistent style)
 - Verified Docker build still works
 - Committed: fdfb8cf
+
+### 2026-01-07 - Iteration 2: Unused Code & Rate Limiting
+- Audited codebase for unused code - code is already clean (Biome would catch it)
+- Marked "unused code removal" as complete (nothing to remove)
+- Installed hono-rate-limiter@0.5.3
+- Added two rate limiters:
+  - Global: 100 req/min per IP on all /api/* routes
+  - Stricter: 10 req/min per IP on POST/PUT write endpoints
+- IP extraction handles x-forwarded-for and x-real-ip headers
+- Returns JSON error message on rate limit exceeded
+- Verified Docker build still works
+- Committed: 3a22c1a
