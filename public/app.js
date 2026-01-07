@@ -1,6 +1,11 @@
 // ABOUTME: Frontend JavaScript for stock-picker-madness
 // ABOUTME: Handles UI interactions, API calls, and URL-based navigation
 
+const VIRTUAL_BUDGET = 1000;
+
+// Price cache for budget calculation
+const priceCache = new Map();
+
 const API = {
 	async getCompetitions() {
 		const res = await fetch("/api/competitions");
@@ -58,6 +63,23 @@ const API = {
 			`/api/competitions/${slugOrId}/audit-log?limit=${limit}&offset=${offset}`,
 		);
 		return res.json();
+	},
+
+	// Fetch current stock price for budget calculation
+	async getStockPrice(ticker) {
+		// Use Yahoo Finance chart API for quick quote
+		try {
+			const res = await fetch(
+				`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+			);
+			const data = await res.json();
+			if (data.chart?.result?.[0]?.meta?.regularMarketPrice) {
+				return data.chart.result[0].meta.regularMarketPrice;
+			}
+		} catch (e) {
+			console.error("Failed to fetch price for", ticker, e);
+		}
+		return null;
 	},
 };
 
@@ -295,11 +317,8 @@ async function renderCompetitionDetail(slug) {
 	document.querySelectorAll(".edit-pick-btn").forEach((btn) => {
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
-			const tickers = JSON.parse(btn.dataset.tickers || "[]");
-			showEditModal(
-				btn.dataset.id,
-				tickers.length > 0 ? tickers : [btn.dataset.ticker],
-			);
+			const portfolio = JSON.parse(btn.dataset.portfolio || "[]");
+			showEditModal(btn.dataset.id, portfolio);
 		});
 	});
 }
@@ -327,13 +346,13 @@ function renderParticipantsTable(participants, canEdit) {
           <tr class="${i === 0 && p.percent_change !== null ? "rank-1" : ""}">
             <td><span class="rank-cell">${i + 1}</span></td>
             <td>${escapeHtml(p.name)}</td>
-            <td>${renderPortfolioTickers(p.portfolio || [{ ticker: p.ticker }])}</td>
+            <td>${renderPortfolioTickers(p.portfolio || [{ ticker: p.ticker, shares: 1 }])}</td>
             <td class="${p.percent_change >= 0 ? "gain" : "loss"}">
               ${formatPercent(p.percent_change)}
             </td>
             ${
 							canEdit
-								? `<td><button class="btn btn-small btn-secondary edit-pick-btn" data-id="${p.id}" data-tickers='${JSON.stringify((p.portfolio || []).map((s) => s.ticker))}'>Edit</button></td>`
+								? `<td><button class="btn btn-small btn-secondary edit-pick-btn" data-id="${p.id}" data-portfolio='${JSON.stringify((p.portfolio || []).map((s) => ({ ticker: s.ticker, shares: s.shares })))}'>Edit</button></td>`
 								: ""
 						}
           </tr>
@@ -345,26 +364,34 @@ function renderParticipantsTable(participants, canEdit) {
   `;
 }
 
-// Render portfolio tickers with expand/collapse for many stocks
+// Render portfolio tickers with shares and expand/collapse for many stocks
 function renderPortfolioTickers(portfolio) {
 	if (!portfolio || portfolio.length === 0) return "—";
 
-	const tickers = portfolio.map((s) => s.ticker);
 	const maxShow = 3;
 
-	if (tickers.length <= maxShow) {
+	if (portfolio.length <= maxShow) {
 		return `<div class="portfolio-tickers-display">
-			${tickers.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join("")}
+			${portfolio.map((s) => `<span class="ticker-symbol">${escapeHtml(s.ticker)}<span class="shares-badge">x${formatShares(s.shares)}</span></span>`).join("")}
 		</div>`;
 	}
 
-	const visible = tickers.slice(0, maxShow);
-	const hidden = tickers.slice(maxShow);
+	const visible = portfolio.slice(0, maxShow);
+	const hidden = portfolio.slice(maxShow);
 
 	return `<div class="portfolio-tickers-display">
-		${visible.map((t) => `<span class="ticker-symbol">${escapeHtml(t)}</span>`).join("")}
-		<button class="portfolio-expand-btn" title="${hidden.join(", ")}">+${hidden.length} more</button>
+		${visible.map((s) => `<span class="ticker-symbol">${escapeHtml(s.ticker)}<span class="shares-badge">x${formatShares(s.shares)}</span></span>`).join("")}
+		<button class="portfolio-expand-btn" title="${hidden.map((s) => `${s.ticker} x${formatShares(s.shares)}`).join(", ")}">+${hidden.length} more</button>
 	</div>`;
+}
+
+// Format shares for display (e.g., 2.5 or 10)
+function formatShares(shares) {
+	if (shares === null || shares === undefined) return "?";
+	const num = parseFloat(shares);
+	if (Number.isNaN(num)) return "?";
+	// Show decimal only if needed
+	return num % 1 === 0 ? num.toString() : num.toFixed(2);
 }
 
 // Navigation
@@ -424,44 +451,53 @@ function hideCreateModal() {
 }
 
 function showJoinModal() {
-	// Reset to single ticker input
+	// Reset to single ticker input with shares
 	const container = document.getElementById("portfolio-tickers");
 	container.innerHTML = `
 		<div class="ticker-row">
 			<input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+			<input type="number" class="shares-input" placeholder="Shares" min="0.01" step="0.01">
 			<button type="button" class="btn btn-small btn-remove-ticker" disabled>×</button>
 		</div>
 	`;
 	updateRemoveButtons(container);
+	updateBudgetDisplay("portfolio-tickers", "budget-used", "budget-status");
 	joinModal.classList.remove("hidden");
 }
 
 function hideJoinModal() {
 	joinModal.classList.add("hidden");
 	document.getElementById("join-form").reset();
+	priceCache.clear();
 }
 
-function showEditModal(participantId, portfolioTickers) {
+function showEditModal(participantId, portfolioStocks) {
 	document.getElementById("edit-participant-id").value = participantId;
 
-	// Populate with current portfolio tickers
+	// portfolioStocks can be array of objects with ticker and shares, or just tickers
 	const container = document.getElementById("edit-portfolio-tickers");
-	const tickers = Array.isArray(portfolioTickers)
-		? portfolioTickers
-		: [portfolioTickers];
+	const stocks = Array.isArray(portfolioStocks) ? portfolioStocks : [];
 
-	container.innerHTML = tickers
-		.map(
-			(ticker) => `
+	container.innerHTML = stocks
+		.map((stock) => {
+			const ticker = typeof stock === "string" ? stock : stock.ticker;
+			const shares = typeof stock === "object" ? stock.shares : "";
+			return `
 		<div class="ticker-row">
 			<input type="text" class="ticker-input" value="${escapeHtml(ticker)}" placeholder="AAPL" maxlength="10">
+			<input type="number" class="shares-input" value="${shares || ""}" placeholder="Shares" min="0.01" step="0.01">
 			<button type="button" class="btn btn-small btn-remove-ticker">×</button>
 		</div>
-	`,
-		)
+	`;
+		})
 		.join("");
 
 	updateRemoveButtons(container);
+	updateBudgetDisplay(
+		"edit-portfolio-tickers",
+		"edit-budget-used",
+		"edit-budget-status",
+	);
 	editModal.classList.remove("hidden");
 }
 
@@ -482,11 +518,23 @@ function addTickerRow(container) {
 	newRow.className = "ticker-row";
 	newRow.innerHTML = `
 		<input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+		<input type="number" class="shares-input" placeholder="Shares" min="0.01" step="0.01">
 		<button type="button" class="btn btn-small btn-remove-ticker">×</button>
 	`;
 	container.appendChild(newRow);
 	updateRemoveButtons(container);
 	newRow.querySelector(".ticker-input").focus();
+
+	// Determine which budget display to update based on container id
+	if (container.id === "portfolio-tickers") {
+		updateBudgetDisplay("portfolio-tickers", "budget-used", "budget-status");
+	} else {
+		updateBudgetDisplay(
+			"edit-portfolio-tickers",
+			"edit-budget-used",
+			"edit-budget-status",
+		);
+	}
 }
 
 function removeTickerRow(button) {
@@ -518,6 +566,95 @@ function getTickersFromContainer(container) {
 	}
 	return tickers;
 }
+
+// Get portfolio data (tickers with shares) from container
+function getPortfolioFromContainer(container) {
+	const rows = container.querySelectorAll(".ticker-row");
+	const portfolio = [];
+	for (const row of rows) {
+		const tickerInput = row.querySelector(".ticker-input");
+		const sharesInput = row.querySelector(".shares-input");
+		const ticker = tickerInput?.value.trim().toUpperCase();
+		const shares = parseFloat(sharesInput?.value) || 0;
+		if (ticker) {
+			portfolio.push({ ticker, shares });
+		}
+	}
+	return portfolio;
+}
+
+// Update budget display based on current inputs
+async function updateBudgetDisplay(containerId, budgetUsedId, budgetStatusId) {
+	const container = document.getElementById(containerId);
+	const budgetUsedEl = document.getElementById(budgetUsedId);
+	const budgetStatusEl = document.getElementById(budgetStatusId);
+
+	if (!container || !budgetUsedEl || !budgetStatusEl) return;
+
+	const portfolio = getPortfolioFromContainer(container);
+	let totalUsed = 0;
+	let hasUnpricedStocks = false;
+
+	for (const item of portfolio) {
+		if (!item.ticker || !item.shares) continue;
+
+		let price = priceCache.get(item.ticker);
+		if (price === undefined) {
+			// Mark as loading
+			hasUnpricedStocks = true;
+			// Fetch price asynchronously
+			price = await API.getStockPrice(item.ticker);
+			if (price !== null) {
+				priceCache.set(item.ticker, price);
+			} else {
+				priceCache.set(item.ticker, null);
+			}
+		}
+
+		if (price !== null && price !== undefined) {
+			totalUsed += item.shares * price;
+		} else if (item.shares > 0) {
+			hasUnpricedStocks = true;
+		}
+	}
+
+	budgetUsedEl.textContent = `$${totalUsed.toFixed(2)}`;
+
+	if (hasUnpricedStocks && totalUsed === 0) {
+		budgetStatusEl.textContent = "";
+		budgetStatusEl.className = "budget-status";
+	} else if (totalUsed > VIRTUAL_BUDGET) {
+		budgetStatusEl.textContent = "Over budget!";
+		budgetStatusEl.className = "budget-status over-budget";
+	} else if (totalUsed > VIRTUAL_BUDGET * 0.95) {
+		budgetStatusEl.textContent = "Almost full";
+		budgetStatusEl.className = "budget-status at-budget";
+	} else if (totalUsed > 0) {
+		const remaining = VIRTUAL_BUDGET - totalUsed;
+		budgetStatusEl.textContent = `$${remaining.toFixed(0)} left`;
+		budgetStatusEl.className = "budget-status under-budget";
+	} else {
+		budgetStatusEl.textContent = "";
+		budgetStatusEl.className = "budget-status";
+	}
+}
+
+// Debounce helper
+function debounce(fn, delay) {
+	let timeout;
+	return function (...args) {
+		clearTimeout(timeout);
+		timeout = setTimeout(() => fn.apply(this, args), delay);
+	};
+}
+
+// Debounced budget update
+const debouncedBudgetUpdate = debounce(
+	(containerId, budgetUsedId, statusId) => {
+		updateBudgetDisplay(containerId, budgetUsedId, statusId);
+	},
+	500,
+);
 
 // Helper to format date for datetime-local input (must be in local time)
 function formatDateForInput(date) {
@@ -735,16 +872,23 @@ document.getElementById("join-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
 	const container = document.getElementById("portfolio-tickers");
-	const tickers = getTickersFromContainer(container);
+	const portfolio = getPortfolioFromContainer(container);
 
-	if (tickers.length === 0) {
+	if (portfolio.length === 0) {
 		alert("Please enter at least one stock ticker");
+		return;
+	}
+
+	// Validate that all stocks have shares
+	const missingShares = portfolio.some((p) => !p.shares || p.shares <= 0);
+	if (missingShares) {
+		alert("Please enter the number of shares for each stock");
 		return;
 	}
 
 	const data = {
 		name: document.getElementById("participant-name").value,
-		tickers: tickers,
+		portfolio: portfolio,
 	};
 
 	const result = await API.joinCompetition(currentCompetitionSlug, data);
@@ -763,14 +907,21 @@ document.getElementById("edit-form").addEventListener("submit", async (e) => {
 
 	const participantId = document.getElementById("edit-participant-id").value;
 	const container = document.getElementById("edit-portfolio-tickers");
-	const tickers = getTickersFromContainer(container);
+	const portfolio = getPortfolioFromContainer(container);
 
-	if (tickers.length === 0) {
+	if (portfolio.length === 0) {
 		alert("Portfolio must contain at least one stock");
 		return;
 	}
 
-	const result = await API.updateParticipant(participantId, { tickers });
+	// Validate that all stocks have shares
+	const missingShares = portfolio.some((p) => !p.shares || p.shares <= 0);
+	if (missingShares) {
+		alert("Please enter the number of shares for each stock");
+		return;
+	}
+
+	const result = await API.updateParticipant(participantId, { portfolio });
 
 	if (result.error) {
 		alert(result.error);
@@ -797,5 +948,30 @@ document.getElementById("edit-add-ticker-btn").addEventListener("click", () => {
 document.addEventListener("click", (e) => {
 	if (e.target.classList.contains("btn-remove-ticker") && !e.target.disabled) {
 		removeTickerRow(e.target);
+	}
+});
+
+// Event delegation for budget tracking on input changes
+document.addEventListener("input", (e) => {
+	if (
+		e.target.classList.contains("ticker-input") ||
+		e.target.classList.contains("shares-input")
+	) {
+		const container = e.target.closest(".portfolio-tickers");
+		if (container) {
+			if (container.id === "portfolio-tickers") {
+				debouncedBudgetUpdate(
+					"portfolio-tickers",
+					"budget-used",
+					"budget-status",
+				);
+			} else if (container.id === "edit-portfolio-tickers") {
+				debouncedBudgetUpdate(
+					"edit-portfolio-tickers",
+					"edit-budget-used",
+					"edit-budget-status",
+				);
+			}
+		}
 	}
 });

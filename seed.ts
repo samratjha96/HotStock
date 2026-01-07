@@ -51,6 +51,7 @@ interface StockData {
 	ticker: string;
 	baselinePrice: number;
 	currentPrice: number;
+	shares: number;
 }
 
 interface ParticipantData {
@@ -59,89 +60,187 @@ interface ParticipantData {
 }
 
 // These are simulated prices - in reality you'd fetch current prices from Yahoo
+// Budget is $1000 per participant, shares are calculated to stay within budget
 const participants: ParticipantData[] = [
-	// Single-stock portfolios (traditional picks)
+	// Single-stock portfolios (traditional picks) - all $1000 into one stock
 	{
 		name: "Alice",
-		portfolio: [{ ticker: "NVDA", baselinePrice: 123.54, currentPrice: 148.9 }],
-	}, // +20.5% - AI boom continues
+		portfolio: [
+			{
+				ticker: "NVDA",
+				baselinePrice: 123.54,
+				currentPrice: 148.9,
+				shares: 8.1,
+			},
+		],
+	}, // ~$1000 invested, +20.5% - AI boom continues
 	{
 		name: "Bob",
 		portfolio: [
-			{ ticker: "AAPL", baselinePrice: 218.24, currentPrice: 243.15 },
+			{
+				ticker: "AAPL",
+				baselinePrice: 218.24,
+				currentPrice: 243.15,
+				shares: 4.58,
+			},
 		],
-	}, // +11.4% - steady growth
+	}, // ~$1000 invested, +11.4% - steady growth
 	{
 		name: "Charlie",
 		portfolio: [
-			{ ticker: "GOOGL", baselinePrice: 184.76, currentPrice: 197.3 },
+			{
+				ticker: "GOOGL",
+				baselinePrice: 184.76,
+				currentPrice: 197.3,
+				shares: 5.41,
+			},
 		],
-	}, // +6.8%
+	}, // ~$1000 invested, +6.8%
 	{
 		name: "Diana",
-		portfolio: [{ ticker: "MSFT", baselinePrice: 447.45, currentPrice: 431.2 }],
-	}, // -3.6% - slight dip
+		portfolio: [
+			{
+				ticker: "MSFT",
+				baselinePrice: 447.45,
+				currentPrice: 431.2,
+				shares: 2.23,
+			},
+		],
+	}, // ~$1000 invested, -3.6% - slight dip
 
-	// Multi-stock portfolios (new feature)
+	// Multi-stock portfolios with weighted allocations
 	{
 		name: "Eve",
 		portfolio: [
-			{ ticker: "META", baselinePrice: 504.22, currentPrice: 612.77 }, // +21.5%
-			{ ticker: "NVDA", baselinePrice: 123.54, currentPrice: 148.9 }, // +20.5%
-			{ ticker: "GOOGL", baselinePrice: 184.76, currentPrice: 197.3 }, // +6.8%
+			{
+				ticker: "META",
+				baselinePrice: 504.22,
+				currentPrice: 612.77,
+				shares: 1,
+			}, // $504
+			{
+				ticker: "NVDA",
+				baselinePrice: 123.54,
+				currentPrice: 148.9,
+				shares: 2.5,
+			}, // $309
+			{
+				ticker: "GOOGL",
+				baselinePrice: 184.76,
+				currentPrice: 197.3,
+				shares: 1,
+			}, // $185
 		],
-	}, // avg ~16.3%
+	}, // Total ~$998, weighted gain
 
 	{
 		name: "Frank",
 		portfolio: [
-			{ ticker: "TSLA", baselinePrice: 248.48, currentPrice: 410.44 }, // +65.2%
-			{ ticker: "RIVN", baselinePrice: 13.88, currentPrice: 14.12 }, // +1.7%
+			{
+				ticker: "TSLA",
+				baselinePrice: 248.48,
+				currentPrice: 410.44,
+				shares: 3.2,
+			}, // $795 - heavy on TSLA
+			{
+				ticker: "RIVN",
+				baselinePrice: 13.88,
+				currentPrice: 14.12,
+				shares: 14.5,
+			}, // $201
 		],
-	}, // avg ~33.5% - EV focused
+	}, // Total ~$996, EV focused with heavy TSLA weight
 
 	{
 		name: "Grace",
 		portfolio: [
-			{ ticker: "AMZN", baselinePrice: 197.12, currentPrice: 224.92 }, // +14.1%
-			{ ticker: "WMT", baselinePrice: 68.05, currentPrice: 91.94 }, // +35.1%
-			{ ticker: "COST", baselinePrice: 846.71, currentPrice: 924.44 }, // +9.2%
+			{
+				ticker: "AMZN",
+				baselinePrice: 197.12,
+				currentPrice: 224.92,
+				shares: 1.7,
+			}, // $335
+			{ ticker: "WMT", baselinePrice: 68.05, currentPrice: 91.94, shares: 5 }, // $340
+			{
+				ticker: "COST",
+				baselinePrice: 846.71,
+				currentPrice: 924.44,
+				shares: 0.38,
+			}, // $322
 		],
-	}, // avg ~19.5% - Retail portfolio
+	}, // Total ~$997, Retail portfolio
 
 	{
 		name: "Henry",
 		portfolio: [
-			{ ticker: "COIN", baselinePrice: 237.81, currentPrice: 268.94 }, // +13.1%
-			{ ticker: "GME", baselinePrice: 23.14, currentPrice: 31.15 }, // +34.6%
+			{
+				ticker: "COIN",
+				baselinePrice: 237.81,
+				currentPrice: 268.94,
+				shares: 2.5,
+			}, // $594 - heavy on COIN
+			{
+				ticker: "GME",
+				baselinePrice: 23.14,
+				currentPrice: 31.15,
+				shares: 17.5,
+			}, // $405
 		],
-	}, // avg ~23.9% - High risk
+	}, // Total ~$999, High risk with crypto exposure
 
 	{
 		name: "Ivy",
 		portfolio: [
-			{ ticker: "JNJ", baselinePrice: 146.71, currentPrice: 144.07 }, // -1.8%
-			{ ticker: "XOM", baselinePrice: 114.71, currentPrice: 106.83 }, // -6.9%
+			{
+				ticker: "JNJ",
+				baselinePrice: 146.71,
+				currentPrice: 144.07,
+				shares: 3.4,
+			}, // $499
+			{
+				ticker: "XOM",
+				baselinePrice: 114.71,
+				currentPrice: 106.83,
+				shares: 4.3,
+			}, // $493
 		],
-	}, // avg ~-4.4% - Defensive picks that didn't work
+	}, // Total ~$992, Defensive picks that didn't work
 
 	{
 		name: "Jack",
-		portfolio: [{ ticker: "AMC", baselinePrice: 4.89, currentPrice: 3.23 }],
-	}, // -33.9% - big loser
+		portfolio: [
+			{ ticker: "AMC", baselinePrice: 4.89, currentPrice: 3.23, shares: 204.5 },
+		],
+	}, // ~$1000 invested, -33.9% - big loser, all eggs in one basket
 ];
 
 console.log(`Adding ${participants.length} participants...`);
 
+// Calculate weighted percent change based on initial investment value
+function calculateWeightedPercentChange(portfolio: StockData[]): number {
+	const totalInvestment = portfolio.reduce(
+		(sum, s) => sum + s.shares * s.baselinePrice,
+		0,
+	);
+
+	if (totalInvestment === 0) return 0;
+
+	const weightedSum = portfolio.reduce((sum, s) => {
+		const initialValue = s.shares * s.baselinePrice;
+		const weight = initialValue / totalInvestment;
+		const percentChange =
+			((s.currentPrice - s.baselinePrice) / s.baselinePrice) * 100;
+		return sum + weight * percentChange;
+	}, 0);
+
+	return weightedSum;
+}
+
 for (const p of participants) {
 	const participantId = crypto.randomUUID();
 
-	// Calculate aggregate percent change
-	const stockChanges = p.portfolio.map(
-		(s) => ((s.currentPrice - s.baselinePrice) / s.baselinePrice) * 100,
-	);
-	const avgPercentChange =
-		stockChanges.reduce((sum, c) => sum + c, 0) / stockChanges.length;
+	// Calculate weighted percent change
+	const weightedPercentChange = calculateWeightedPercentChange(p.portfolio);
 
 	// Pick date is during the window (June 30 - July 1, 2025)
 	const pickDate = new Date("2025-06-30T14:00:00Z");
@@ -159,19 +258,19 @@ for (const p of participants) {
 			firstStock.ticker,
 			firstStock.baselinePrice,
 			firstStock.currentPrice,
-			avgPercentChange,
+			weightedPercentChange,
 			pickDate.toISOString(),
 			pickDate.toISOString(),
 		],
 	);
 
-	// Insert portfolio stocks
+	// Insert portfolio stocks with shares
 	for (const stock of p.portfolio) {
 		const stockPercentChange =
 			((stock.currentPrice - stock.baselinePrice) / stock.baselinePrice) * 100;
 		db.run(
-			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, added_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, shares, added_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 			[
 				crypto.randomUUID(),
 				participantId,
@@ -179,14 +278,17 @@ for (const p of participants) {
 				stock.baselinePrice,
 				stock.currentPrice,
 				stockPercentChange,
+				stock.shares,
 				pickDate.toISOString(),
 			],
 		);
 	}
 
-	const tickerStr = p.portfolio.map((s) => s.ticker).join(", ");
+	const tickerStr = p.portfolio
+		.map((s) => `${s.ticker}x${s.shares}`)
+		.join(", ");
 	console.log(
-		`  ${p.name}: [${tickerStr}] (${avgPercentChange > 0 ? "+" : ""}${avgPercentChange.toFixed(1)}%)`,
+		`  ${p.name}: [${tickerStr}] (${weightedPercentChange > 0 ? "+" : ""}${weightedPercentChange.toFixed(1)}%)`,
 	);
 }
 

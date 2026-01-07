@@ -209,19 +209,72 @@ async function refreshPricesIfNeeded(competition: {
 }
 
 // Helper to recalculate a participant's aggregate percent_change from their portfolio
+// Uses weighted average based on initial investment value (shares * baseline_price)
 function updateParticipantAggregate(participantId: string): void {
-	const result = db
+	const stocks = db
 		.query(`
-			SELECT AVG(percent_change) as avg_change
+			SELECT shares, baseline_price, current_price, percent_change
 			FROM portfolio_stocks
 			WHERE participant_id = ? AND percent_change IS NOT NULL
 		`)
-		.get(participantId) as { avg_change: number | null };
+		.all(participantId) as Array<{
+		shares: number;
+		baseline_price: number | null;
+		current_price: number | null;
+		percent_change: number;
+	}>;
+
+	if (stocks.length === 0) {
+		db.run(`UPDATE participants SET percent_change = NULL WHERE id = ?`, [
+			participantId,
+		]);
+		return;
+	}
+
+	const weightedChange = calculateWeightedPercentChange(
+		stocks.map((s) => ({
+			shares: s.shares,
+			baselinePrice: s.baseline_price,
+			currentPrice: s.current_price,
+			percentChange: s.percent_change,
+		})),
+	);
 
 	db.run(`UPDATE participants SET percent_change = ? WHERE id = ?`, [
-		result.avg_change,
+		weightedChange,
 		participantId,
 	]);
+}
+
+// Calculate weighted percent change based on initial investment value
+// Weight = (shares * baseline_price) / total_investment
+function calculateWeightedPercentChange(
+	stocks: Array<{
+		shares: number;
+		baselinePrice: number | null;
+		currentPrice: number | null;
+		percentChange: number;
+	}>,
+): number {
+	// Calculate total initial investment
+	const totalInvestment = stocks.reduce((sum, s) => {
+		return sum + s.shares * (s.baselinePrice || 0);
+	}, 0);
+
+	if (totalInvestment === 0) {
+		// Fallback to simple average if no baseline prices
+		return stocks.reduce((sum, s) => sum + s.percentChange, 0) / stocks.length;
+	}
+
+	// Calculate weighted percent change
+	// Each stock's contribution = (initial_value / total_investment) * percent_change
+	const weightedSum = stocks.reduce((sum, s) => {
+		const initialValue = s.shares * (s.baselinePrice || 0);
+		const weight = initialValue / totalInvestment;
+		return sum + weight * s.percentChange;
+	}, 0);
+
+	return weightedSum;
 }
 
 // API: List all competitions (locked or finalized backfill competitions are public)
@@ -354,14 +407,37 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 	});
 });
 
+// Virtual budget for portfolio allocation (shared constant)
+const VIRTUAL_BUDGET = 1000;
+
+// Type for portfolio stock input (ticker + shares)
+interface PortfolioStockInput {
+	ticker: string;
+	shares: number;
+}
+
 // API: Join competition (with stricter rate limit)
 app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 	const slugOrId = c.req.param("slugOrId");
 	const body = await c.req.json();
-	const { name, ticker, tickers } = body;
+	const { name, ticker, tickers, portfolio } = body;
 
-	// Support both single ticker (backwards compat) and array of tickers
-	const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+	// Support multiple input formats:
+	// 1. portfolio: [{ ticker: "AAPL", shares: 2.5 }, ...] - new format with shares
+	// 2. tickers: ["AAPL", "GOOGL"] - old array format (auto-calculate equal shares)
+	// 3. ticker: "AAPL" - old single ticker format (auto-calculate shares)
+	let portfolioInput: PortfolioStockInput[] = [];
+
+	if (portfolio && Array.isArray(portfolio)) {
+		// New format with explicit shares
+		portfolioInput = portfolio;
+	} else {
+		// Legacy format - will calculate shares after fetching prices
+		const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+		portfolioInput = tickerList.map((t: string) => ({ ticker: t, shares: 0 })); // 0 = auto-calculate
+	}
+
+	const tickerList = portfolioInput.map((p) => p.ticker);
 
 	if (!name || tickerList.length === 0) {
 		return c.json({ error: "Missing required fields: name, ticker(s)" }, 400);
@@ -438,12 +514,14 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 	// Fetch prices for all tickers
 	const stockData: Array<{
 		ticker: string;
+		shares: number;
 		baselinePrice: number | null;
 		currentPrice: number | null;
 		percentChange: number;
 	}> = [];
 
-	for (const t of sanitizedTickers) {
+	for (let i = 0; i < sanitizedTickers.length; i++) {
+		const t = sanitizedTickers[i]!;
 		let baselinePrice: number | null;
 		let currentPrice: number | null;
 
@@ -469,12 +547,47 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 				? ((currentPrice - baselinePrice) / baselinePrice) * 100
 				: 0;
 
-		stockData.push({ ticker: t, baselinePrice, currentPrice, percentChange });
+		// Get shares from input or calculate later
+		const inputShares = portfolioInput[i]?.shares || 0;
+
+		stockData.push({
+			ticker: t,
+			shares: inputShares,
+			baselinePrice,
+			currentPrice,
+			percentChange,
+		});
 	}
 
-	// Calculate aggregate percent change
-	const avgPercentChange =
-		stockData.reduce((sum, s) => sum + s.percentChange, 0) / stockData.length;
+	// If shares were not provided (legacy format), auto-calculate equal distribution
+	const needsAutoShares = stockData.some((s) => s.shares === 0);
+	if (needsAutoShares) {
+		const amountPerStock = VIRTUAL_BUDGET / stockData.length;
+		for (const stock of stockData) {
+			if (stock.baselinePrice) {
+				stock.shares = amountPerStock / stock.baselinePrice;
+			} else {
+				stock.shares = 1; // Fallback if no price
+			}
+		}
+	}
+
+	// Validate total investment doesn't exceed budget (with 1% tolerance for rounding)
+	const totalInvestment = stockData.reduce((sum, s) => {
+		return sum + s.shares * (s.baselinePrice || 0);
+	}, 0);
+	if (totalInvestment > VIRTUAL_BUDGET * 1.01) {
+		return c.json(
+			{
+				error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${VIRTUAL_BUDGET}). Please reduce shares.`,
+			},
+			400,
+		);
+	}
+
+	// Calculate weighted percent change based on initial investment value
+	// Weight = (shares * baseline_price) / total_investment
+	const weightedPercentChange = calculateWeightedPercentChange(stockData);
 
 	// Create participant (ticker field kept for backwards compat, shows first ticker)
 	const participantId = generateId();
@@ -488,14 +601,14 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 			firstStock.ticker,
 			firstStock.baselinePrice,
 			firstStock.currentPrice,
-			avgPercentChange,
+			weightedPercentChange,
 		],
 	);
 
-	// Create portfolio stocks
+	// Create portfolio stocks with shares
 	for (const s of stockData) {
 		db.run(
-			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, shares) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			[
 				generateId(),
 				participantId,
@@ -503,6 +616,7 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 				s.baselinePrice,
 				s.currentPrice,
 				s.percentChange,
+				s.shares,
 			],
 		);
 	}
@@ -527,10 +641,22 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 app.put("/api/participants/:id", writeLimiter, async (c) => {
 	const participantId = c.req.param("id");
 	const body = await c.req.json();
-	const { ticker, tickers } = body;
+	const { ticker, tickers, portfolio } = body;
 
-	// Support both single ticker (backwards compat) and array of tickers
-	const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+	// Support multiple input formats:
+	// 1. portfolio: [{ ticker: "AAPL", shares: 2.5 }, ...] - new format with shares
+	// 2. tickers: ["AAPL", "GOOGL"] - old array format (auto-calculate equal shares)
+	// 3. ticker: "AAPL" - old single ticker format (auto-calculate shares)
+	let portfolioInput: PortfolioStockInput[] = [];
+
+	if (portfolio && Array.isArray(portfolio)) {
+		portfolioInput = portfolio;
+	} else {
+		const tickerList: string[] = tickers || (ticker ? [ticker] : []);
+		portfolioInput = tickerList.map((t: string) => ({ ticker: t, shares: 0 }));
+	}
+
+	const tickerList = portfolioInput.map((p) => p.ticker);
 
 	if (tickerList.length === 0) {
 		return c.json({ error: "Portfolio must contain at least 1 stock" }, 400);
@@ -590,15 +716,32 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		);
 	}
 
-	// Get current portfolio stocks
+	// Get current portfolio stocks with shares
 	const currentStocks = db
-		.query(`SELECT ticker FROM portfolio_stocks WHERE participant_id = ?`)
-		.all(participantId) as Array<{ ticker: string }>;
-	const currentTickers = new Set(currentStocks.map((s) => s.ticker));
+		.query(
+			`SELECT id, ticker, shares, baseline_price FROM portfolio_stocks WHERE participant_id = ?`,
+		)
+		.all(participantId) as Array<{
+		id: string;
+		ticker: string;
+		shares: number;
+		baseline_price: number | null;
+	}>;
+	const currentStockMap = new Map(currentStocks.map((s) => [s.ticker, s]));
 
-	// Calculate adds and removes
+	// Build updated portfolio input map
+	const updatedPortfolioMap = new Map<string, number>();
+	for (let i = 0; i < sanitizedTickers.length; i++) {
+		const ticker = sanitizedTickers[i]!;
+		const shares = portfolioInput[i]?.shares || 0;
+		updatedPortfolioMap.set(ticker, shares);
+	}
+
+	// Calculate adds, updates, and removes
+	const currentTickers = new Set(currentStocks.map((s) => s.ticker));
 	const newTickers = new Set(sanitizedTickers);
 	const tickersToAdd = sanitizedTickers.filter((t) => !currentTickers.has(t));
+	const tickersToUpdate = sanitizedTickers.filter((t) => currentTickers.has(t));
 	const tickersToRemove = [...currentTickers].filter((t) => !newTickers.has(t));
 
 	// Validate new tickers with Yahoo Finance
@@ -612,6 +755,25 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 	// Fetch prices for new tickers (baseline from competition start)
 	const startDate = new Date(participant.pick_window_start);
 
+	// Collect all stock data for validation and weighted calculation
+	const allStockData: Array<{
+		ticker: string;
+		shares: number;
+		baselinePrice: number | null;
+	}> = [];
+
+	// Add existing stocks that are being kept (with potentially updated shares)
+	for (const t of tickersToUpdate) {
+		const existing = currentStockMap.get(t)!;
+		const newShares = updatedPortfolioMap.get(t) || existing.shares;
+		allStockData.push({
+			ticker: t,
+			shares: newShares,
+			baselinePrice: existing.baseline_price,
+		});
+	}
+
+	// Add new stocks
 	for (const t of tickersToAdd) {
 		let baselinePrice: number | null;
 		let currentPrice: number | null;
@@ -628,10 +790,8 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 			}
 			currentPrice = await fetchPrice(t);
 		} else {
-			// For regular competitions, baseline from competition start
 			baselinePrice = await fetchHistoricalPrice(t, startDate);
 			if (baselinePrice === null) {
-				// If historical price not available, use current price
 				baselinePrice = await fetchPrice(t);
 			}
 			currentPrice = await fetchPrice(t);
@@ -642,8 +802,11 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 				? ((currentPrice - baselinePrice) / baselinePrice) * 100
 				: 0;
 
+		const shares = updatedPortfolioMap.get(t) || 0;
+		allStockData.push({ ticker: t, shares, baselinePrice });
+
 		db.run(
-			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change) VALUES (?, ?, ?, ?, ?, ?)`,
+			`INSERT INTO portfolio_stocks (id, participant_id, ticker, baseline_price, current_price, percent_change, shares) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 			[
 				generateId(),
 				participantId,
@@ -651,8 +814,62 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 				baselinePrice,
 				currentPrice,
 				percentChange,
+				shares,
 			],
 		);
+	}
+
+	// If shares were not provided (legacy format), auto-calculate equal distribution
+	const needsAutoShares = allStockData.some((s) => s.shares === 0);
+	if (needsAutoShares) {
+		const amountPerStock = VIRTUAL_BUDGET / allStockData.length;
+		for (const stock of allStockData) {
+			if (stock.baselinePrice) {
+				stock.shares = amountPerStock / stock.baselinePrice;
+			} else {
+				stock.shares = 1;
+			}
+		}
+	}
+
+	// Validate total investment doesn't exceed budget
+	const totalInvestment = allStockData.reduce((sum, s) => {
+		return sum + s.shares * (s.baselinePrice || 0);
+	}, 0);
+	if (totalInvestment > VIRTUAL_BUDGET * 1.01) {
+		// Rollback the new inserts by removing them
+		for (const t of tickersToAdd) {
+			db.run(
+				`DELETE FROM portfolio_stocks WHERE participant_id = ? AND ticker = ?`,
+				[participantId, t],
+			);
+		}
+		return c.json(
+			{
+				error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${VIRTUAL_BUDGET}). Please reduce shares.`,
+			},
+			400,
+		);
+	}
+
+	// Update shares for existing stocks
+	for (const t of tickersToUpdate) {
+		const stockData = allStockData.find((s) => s.ticker === t)!;
+		db.run(
+			`UPDATE portfolio_stocks SET shares = ? WHERE participant_id = ? AND ticker = ?`,
+			[stockData.shares, participantId, t],
+		);
+	}
+
+	// If we auto-calculated shares, also update the new stocks
+	if (needsAutoShares) {
+		for (const t of tickersToAdd) {
+			const stockData = allStockData.find((s) => s.ticker === t)!;
+			db.run(
+				`UPDATE portfolio_stocks SET shares = ? WHERE participant_id = ? AND ticker = ?`,
+				[stockData.shares, participantId, t],
+			);
+		}
 	}
 
 	// Remove stocks

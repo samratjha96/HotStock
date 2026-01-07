@@ -822,3 +822,101 @@ input:focus-visible {
 .portfolio-expand-btn:hover {
 	color: var(--primary);
 }
+
+/* === BUDGET TRACKER & SHARES INPUT === */
+.budget-hint {
+	color: var(--text-muted);
+	font-size: 0.8rem;
+	margin-bottom: 0.75rem;
+	line-height: 1.4;
+}
+
+.budget-hint strong {
+	color: var(--text);
+}
+
+.budget-tracker {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--border-light);
+	border-radius: var(--radius);
+	margin-bottom: 0.75rem;
+	font-size: 0.8rem;
+	color: var(--text-secondary);
+}
+
+.budget-amount {
+	font-weight: 600;
+	color: var(--text);
+	font-family: "SF Mono", Monaco, "Courier New", monospace;
+}
+
+.budget-status {
+	margin-left: auto;
+	font-size: 0.75rem;
+	font-weight: 500;
+}
+
+.budget-status.under-budget {
+	color: var(--success);
+}
+
+.budget-status.over-budget {
+	color: var(--danger);
+}
+
+.budget-status.at-budget {
+	color: var(--gold);
+}
+
+.ticker-row .shares-input {
+	width: 80px;
+	flex-shrink: 0;
+	text-align: right;
+}
+
+/* Portfolio breakdown in leaderboard */
+.portfolio-breakdown {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.portfolio-stock-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.75rem;
+}
+
+.portfolio-stock-row .ticker-symbol {
+	font-size: 0.7rem;
+}
+
+.portfolio-stock-row .shares-count {
+	color: var(--text-muted);
+	font-family: "SF Mono", Monaco, "Courier New", monospace;
+}
+
+.portfolio-stock-row .stock-change {
+	margin-left: auto;
+	font-weight: 500;
+}
+
+.portfolio-stock-row .stock-change.gain {
+	color: var(--success);
+}
+
+.portfolio-stock-row .stock-change.loss {
+	color: var(--danger);
+}
+
+/* Shares display in inline portfolio */
+.shares-badge {
+	font-size: 0.65rem;
+	color: var(--text-muted);
+	font-weight: 400;
+	margin-left: 0.15rem;
+}

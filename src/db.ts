@@ -115,6 +115,62 @@ db.run(
 	`CREATE INDEX IF NOT EXISTS idx_portfolio_stocks_participant ON portfolio_stocks(participant_id)`,
 );
 
+// Migration: Add shares column to portfolio_stocks if it doesn't exist
+const portfolioColumns = db
+	.query("PRAGMA table_info(portfolio_stocks)")
+	.all() as Array<{ name: string }>;
+const hasShares = portfolioColumns.some((col) => col.name === "shares");
+if (!hasShares) {
+	// Default to 1 share for existing records (will be recalculated for equal weight)
+	db.run(
+		"ALTER TABLE portfolio_stocks ADD COLUMN shares REAL NOT NULL DEFAULT 1.0",
+	);
+	console.log("Added shares column to portfolio_stocks table.");
+
+	// For backward compatibility: distribute $1000 equally among each participant's stocks
+	// Get all participants with their portfolio stocks
+	const participantsWithStocks = db
+		.query(`
+			SELECT p.id as participant_id, ps.id as stock_id, ps.ticker, ps.baseline_price
+			FROM participants p
+			JOIN portfolio_stocks ps ON ps.participant_id = p.id
+			WHERE ps.baseline_price IS NOT NULL
+		`)
+		.all() as Array<{
+		participant_id: string;
+		stock_id: string;
+		ticker: string;
+		baseline_price: number;
+	}>;
+
+	// Group by participant
+	const stocksByParticipant = new Map<
+		string,
+		Array<{ stock_id: string; baseline_price: number }>
+	>();
+	for (const row of participantsWithStocks) {
+		const stocks = stocksByParticipant.get(row.participant_id) || [];
+		stocks.push({ stock_id: row.stock_id, baseline_price: row.baseline_price });
+		stocksByParticipant.set(row.participant_id, stocks);
+	}
+
+	// Update shares for equal $500 per stock (assuming $1000 budget split equally)
+	const VIRTUAL_BUDGET = 1000;
+	for (const [_participantId, stocks] of stocksByParticipant) {
+		const amountPerStock = VIRTUAL_BUDGET / stocks.length;
+		for (const stock of stocks) {
+			const shares = amountPerStock / stock.baseline_price;
+			db.run(`UPDATE portfolio_stocks SET shares = ? WHERE id = ?`, [
+				shares,
+				stock.stock_id,
+			]);
+		}
+	}
+	console.log(
+		"Migrated existing portfolio stocks with equal-weighted shares distribution.",
+	);
+}
+
 // Migration: Move existing participant tickers to portfolio_stocks table
 // Check if any participants have tickers that aren't in portfolio_stocks yet
 const participantsToMigrate = db

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HotStock</title>
-  <link rel="stylesheet" href="/public/style.css?v=7">
+  <link rel="stylesheet" href="/public/style.css?v=8">
 </head>
 <body>
   <header>
@@ -86,10 +86,18 @@
           <input type="text" id="participant-name" required placeholder="John Doe">
         </div>
         <div class="form-group">
-          <label>Stock Portfolio <span class="label-hint">(1-10 stocks)</span></label>
+          <label>Build Your Portfolio</label>
+          <p class="budget-hint">You have <strong>$1,000</strong> to invest. Enter the number of shares for each stock.</p>
+          <div class="budget-tracker">
+            <span>Budget Used: </span>
+            <span id="budget-used" class="budget-amount">$0.00</span>
+            <span> / $1,000</span>
+            <span id="budget-status" class="budget-status"></span>
+          </div>
           <div id="portfolio-tickers" class="portfolio-tickers">
             <div class="ticker-row">
               <input type="text" class="ticker-input" placeholder="AAPL" maxlength="10">
+              <input type="number" class="shares-input" placeholder="Shares" min="0.01" step="0.01">
               <button type="button" class="btn btn-small btn-remove-ticker" disabled>×</button>
             </div>
           </div>
@@ -110,7 +118,14 @@
       <form id="edit-form">
         <input type="hidden" id="edit-participant-id">
         <div class="form-group">
-          <label>Stock Portfolio <span class="label-hint">(1-10 stocks)</span></label>
+          <label>Update Your Portfolio</label>
+          <p class="budget-hint">You have <strong>$1,000</strong> to invest. Enter the number of shares for each stock.</p>
+          <div class="budget-tracker">
+            <span>Budget Used: </span>
+            <span id="edit-budget-used" class="budget-amount">$0.00</span>
+            <span> / $1,000</span>
+            <span id="edit-budget-status" class="budget-status"></span>
+          </div>
           <div id="edit-portfolio-tickers" class="portfolio-tickers">
             <!-- Populated dynamically -->
           </div>
@@ -124,6 +139,6 @@
     </div>
   </div>
 
-  <script src="/public/app.js?v=8"></script>
+  <script src="/public/app.js?v=9"></script>
 </body>
 </html>
