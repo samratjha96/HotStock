@@ -265,7 +265,7 @@ async function renderCompetitionDetail(slug) {
 	// Add event handlers
 	const joinBtn = document.getElementById("join-btn");
 	if (joinBtn) {
-		joinBtn.addEventListener("click", () => showJoinModal());
+		joinBtn.addEventListener("click", () => showJoinModal(comp.budget));
 	}
 
 	const copyBtn = document.getElementById("copy-url-btn");
@@ -319,7 +319,7 @@ async function renderCompetitionDetail(slug) {
 		btn.addEventListener("click", (e) => {
 			e.stopPropagation();
 			const portfolio = JSON.parse(btn.dataset.portfolio || "[]");
-			showEditModal(btn.dataset.id, portfolio);
+			showEditModal(btn.dataset.id, portfolio, comp.budget);
 		});
 	});
 }
@@ -641,6 +641,7 @@ async function updateBudgetDisplay(containerId, budgetUsedId, budgetStatusId) {
 	const budgetStatusEl = document.getElementById(budgetStatusId);
 
 	if (!container || !budgetUsedEl || !budgetStatusEl) return;
+	if (!currentCompetitionBudget) return; // No budget to track
 
 	const portfolio = getPortfolioFromContainer(container);
 	let totalUsed = 0;
@@ -674,14 +675,14 @@ async function updateBudgetDisplay(containerId, budgetUsedId, budgetStatusId) {
 	if (hasUnpricedStocks && totalUsed === 0) {
 		budgetStatusEl.textContent = "";
 		budgetStatusEl.className = "budget-status";
-	} else if (totalUsed > VIRTUAL_BUDGET) {
+	} else if (totalUsed > currentCompetitionBudget) {
 		budgetStatusEl.textContent = "Over budget!";
 		budgetStatusEl.className = "budget-status over-budget";
-	} else if (totalUsed > VIRTUAL_BUDGET * 0.95) {
+	} else if (totalUsed > currentCompetitionBudget * 0.95) {
 		budgetStatusEl.textContent = "Almost full";
 		budgetStatusEl.className = "budget-status at-budget";
 	} else if (totalUsed > 0) {
-		const remaining = VIRTUAL_BUDGET - totalUsed;
+		const remaining = currentCompetitionBudget - totalUsed;
 		budgetStatusEl.textContent = `$${remaining.toFixed(0)} left`;
 		budgetStatusEl.className = "budget-status under-budget";
 	} else {
@@ -873,6 +874,8 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 	e.preventDefault();
 
 	const isBackfill = document.getElementById("backfill-mode").checked;
+	const budgetInput = document.getElementById("comp-budget").value;
+	const budget = budgetInput ? Number(budgetInput) : null;
 	let data;
 
 	if (isBackfill) {
@@ -892,6 +895,7 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 			pick_window_start: startDateUTC,
 			pick_window_end: endDateUTC,
 			backfill_mode: true,
+			budget: budget,
 		};
 	} else {
 		// Regular mode
@@ -905,6 +909,7 @@ document.getElementById("create-form").addEventListener("submit", async (e) => {
 			name: document.getElementById("comp-name").value,
 			pick_window_start: new Date(pickStart).toISOString(),
 			pick_window_end: new Date(pickEnd).toISOString(),
+			budget: budget,
 		};
 	}
 
