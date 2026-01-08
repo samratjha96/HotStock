@@ -138,6 +138,7 @@ function findCompetition(slugOrId: string) {
 		created_at: string;
 		backfill_mode: number;
 		finalized: number;
+		budget: number | null;
 	} | null;
 }
 
@@ -296,7 +297,8 @@ app.get("/api/competitions", (c) => {
 // API: Create a competition (with stricter rate limit)
 app.post("/api/competitions", writeLimiter, async (c) => {
 	const body = await c.req.json();
-	const { name, pick_window_start, pick_window_end, backfill_mode } = body;
+	const { name, pick_window_start, pick_window_end, backfill_mode, budget } =
+		body;
 
 	if (!name || !pick_window_start || !pick_window_end) {
 		return c.json(
@@ -318,6 +320,16 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 		return c.json({ error: nameValidation.error }, 400);
 	}
 	const sanitizedName = nameValidation.sanitized;
+
+	// Validate budget if provided
+	let validatedBudget: number | null = null;
+	if (budget !== undefined && budget !== null && budget !== "") {
+		const budgetNum = Number(budget);
+		if (Number.isNaN(budgetNum) || budgetNum <= 0) {
+			return c.json({ error: "Budget must be a positive number" }, 400);
+		}
+		validatedBudget = budgetNum;
+	}
 
 	// Validate dates
 	const startDate = new Date(pick_window_start);
@@ -347,7 +359,7 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 	const id = generateId();
 	const slug = generateSlug();
 	db.run(
-		`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, backfill_mode, finalized) VALUES (?, ?, ?, ?, ?, ?, 0)`,
+		`INSERT INTO competitions (id, name, slug, pick_window_start, pick_window_end, backfill_mode, finalized, budget) VALUES (?, ?, ?, ?, ?, ?, 0, ?)`,
 		[
 			id,
 			sanitizedName,
@@ -355,6 +367,7 @@ app.post("/api/competitions", writeLimiter, async (c) => {
 			pick_window_start,
 			pick_window_end,
 			isBackfill ? 1 : 0,
+			validatedBudget,
 		],
 	);
 
@@ -406,9 +419,6 @@ app.get("/api/competitions/:slugOrId", async (c) => {
 		participants: participantsWithPortfolio,
 	});
 });
-
-// Virtual budget for portfolio allocation (shared constant)
-const VIRTUAL_BUDGET = 1000;
 
 // Type for portfolio stock input (ticker + shares)
 interface PortfolioStockInput {
@@ -559,10 +569,10 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 		});
 	}
 
-	// If shares were not provided (legacy format), auto-calculate equal distribution
+	// If shares were not provided (legacy format) and competition has a budget, auto-calculate equal distribution
 	const needsAutoShares = stockData.some((s) => s.shares === 0);
-	if (needsAutoShares) {
-		const amountPerStock = VIRTUAL_BUDGET / stockData.length;
+	if (needsAutoShares && competition.budget) {
+		const amountPerStock = competition.budget / stockData.length;
 		for (const stock of stockData) {
 			if (stock.baselinePrice) {
 				stock.shares = amountPerStock / stock.baselinePrice;
@@ -570,19 +580,27 @@ app.post("/api/competitions/:slugOrId/join", writeLimiter, async (c) => {
 				stock.shares = 1; // Fallback if no price
 			}
 		}
+	} else if (needsAutoShares) {
+		// No budget set - default to 1 share each (equal weighting by percent, not dollars)
+		for (const stock of stockData) {
+			stock.shares = 1;
+		}
 	}
 
 	// Validate total investment doesn't exceed budget (with 1% tolerance for rounding)
-	const totalInvestment = stockData.reduce((sum, s) => {
-		return sum + s.shares * (s.baselinePrice || 0);
-	}, 0);
-	if (totalInvestment > VIRTUAL_BUDGET * 1.01) {
-		return c.json(
-			{
-				error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${VIRTUAL_BUDGET}). Please reduce shares.`,
-			},
-			400,
-		);
+	// Only validate if competition has a budget set
+	if (competition.budget) {
+		const totalInvestment = stockData.reduce((sum, s) => {
+			return sum + s.shares * (s.baselinePrice || 0);
+		}, 0);
+		if (totalInvestment > competition.budget * 1.01) {
+			return c.json(
+				{
+					error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${competition.budget}). Please reduce shares.`,
+				},
+				400,
+			);
+		}
 	}
 
 	// Calculate weighted percent change based on initial investment value
@@ -688,7 +706,7 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 
 	const participant = db
 		.query(`
-    SELECT p.*, c.pick_window_start, c.pick_window_end, c.id as comp_id, c.backfill_mode, c.finalized
+    SELECT p.*, c.pick_window_start, c.pick_window_end, c.id as comp_id, c.backfill_mode, c.finalized, c.budget
     FROM participants p
     JOIN competitions c ON c.id = p.competition_id
     WHERE p.id = ?
@@ -703,6 +721,7 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		pick_window_end: string;
 		backfill_mode: number;
 		finalized: number;
+		budget: number | null;
 	} | null;
 
 	if (!participant) {
@@ -819,10 +838,10 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 		);
 	}
 
-	// If shares were not provided (legacy format), auto-calculate equal distribution
+	// If shares were not provided (legacy format) and competition has a budget, auto-calculate equal distribution
 	const needsAutoShares = allStockData.some((s) => s.shares === 0);
-	if (needsAutoShares) {
-		const amountPerStock = VIRTUAL_BUDGET / allStockData.length;
+	if (needsAutoShares && participant.budget) {
+		const amountPerStock = participant.budget / allStockData.length;
 		for (const stock of allStockData) {
 			if (stock.baselinePrice) {
 				stock.shares = amountPerStock / stock.baselinePrice;
@@ -830,26 +849,33 @@ app.put("/api/participants/:id", writeLimiter, async (c) => {
 				stock.shares = 1;
 			}
 		}
+	} else if (needsAutoShares) {
+		// No budget set - default to 1 share each
+		for (const stock of allStockData) {
+			stock.shares = 1;
+		}
 	}
 
-	// Validate total investment doesn't exceed budget
-	const totalInvestment = allStockData.reduce((sum, s) => {
-		return sum + s.shares * (s.baselinePrice || 0);
-	}, 0);
-	if (totalInvestment > VIRTUAL_BUDGET * 1.01) {
-		// Rollback the new inserts by removing them
-		for (const t of tickersToAdd) {
-			db.run(
-				`DELETE FROM portfolio_stocks WHERE participant_id = ? AND ticker = ?`,
-				[participantId, t],
+	// Validate total investment doesn't exceed budget (only if competition has budget)
+	if (participant.budget) {
+		const totalInvestment = allStockData.reduce((sum, s) => {
+			return sum + s.shares * (s.baselinePrice || 0);
+		}, 0);
+		if (totalInvestment > participant.budget * 1.01) {
+			// Rollback the new inserts by removing them
+			for (const t of tickersToAdd) {
+				db.run(
+					`DELETE FROM portfolio_stocks WHERE participant_id = ? AND ticker = ?`,
+					[participantId, t],
+				);
+			}
+			return c.json(
+				{
+					error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${participant.budget}). Please reduce shares.`,
+				},
+				400,
 			);
 		}
-		return c.json(
-			{
-				error: `Total investment ($${totalInvestment.toFixed(2)}) exceeds budget ($${VIRTUAL_BUDGET}). Please reduce shares.`,
-			},
-			400,
-		);
 	}
 
 	// Update shares for existing stocks

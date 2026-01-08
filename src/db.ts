@@ -72,6 +72,13 @@ if (!hasFinalized) {
 	);
 }
 
+// Migration: Add budget column if it doesn't exist (NULL means no budget limit)
+const hasBudget = columns.some((col) => col.name === "budget");
+if (!hasBudget) {
+	db.run("ALTER TABLE competitions ADD COLUMN budget REAL");
+	console.log("Added budget column to competitions table.");
+}
+
 db.run(`
   CREATE TABLE IF NOT EXISTS participants (
     id TEXT PRIMARY KEY,
@@ -121,53 +128,17 @@ const portfolioColumns = db
 	.all() as Array<{ name: string }>;
 const hasShares = portfolioColumns.some((col) => col.name === "shares");
 if (!hasShares) {
-	// Default to 1 share for existing records (will be recalculated for equal weight)
+	// Default to 1 share for existing records
 	db.run(
 		"ALTER TABLE portfolio_stocks ADD COLUMN shares REAL NOT NULL DEFAULT 1.0",
 	);
 	console.log("Added shares column to portfolio_stocks table.");
 
-	// For backward compatibility: distribute $1000 equally among each participant's stocks
-	// Get all participants with their portfolio stocks
-	const participantsWithStocks = db
-		.query(`
-			SELECT p.id as participant_id, ps.id as stock_id, ps.ticker, ps.baseline_price
-			FROM participants p
-			JOIN portfolio_stocks ps ON ps.participant_id = p.id
-			WHERE ps.baseline_price IS NOT NULL
-		`)
-		.all() as Array<{
-		participant_id: string;
-		stock_id: string;
-		ticker: string;
-		baseline_price: number;
-	}>;
-
-	// Group by participant
-	const stocksByParticipant = new Map<
-		string,
-		Array<{ stock_id: string; baseline_price: number }>
-	>();
-	for (const row of participantsWithStocks) {
-		const stocks = stocksByParticipant.get(row.participant_id) || [];
-		stocks.push({ stock_id: row.stock_id, baseline_price: row.baseline_price });
-		stocksByParticipant.set(row.participant_id, stocks);
-	}
-
-	// Update shares for equal $500 per stock (assuming $1000 budget split equally)
-	const VIRTUAL_BUDGET = 1000;
-	for (const [_participantId, stocks] of stocksByParticipant) {
-		const amountPerStock = VIRTUAL_BUDGET / stocks.length;
-		for (const stock of stocks) {
-			const shares = amountPerStock / stock.baseline_price;
-			db.run(`UPDATE portfolio_stocks SET shares = ? WHERE id = ?`, [
-				shares,
-				stock.stock_id,
-			]);
-		}
-	}
+	// For backward compatibility: keep shares as 1 for existing portfolios
+	// This gives equal weight to each stock regardless of price
+	// (existing competitions don't have a budget, so we can't calculate proper shares)
 	console.log(
-		"Migrated existing portfolio stocks with equal-weighted shares distribution.",
+		"Existing portfolio stocks will use equal weighting (1 share each).",
 	);
 }
 

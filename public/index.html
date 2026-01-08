@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HotStock</title>
-  <link rel="stylesheet" href="/public/style.css?v=8">
+  <link rel="stylesheet" href="/public/style.css?v=9">
 </head>
 <body>
   <header>
@@ -68,6 +68,13 @@
           </div>
         </div>
         
+        <!-- Optional budget setting -->
+        <div class="form-group budget-setting">
+          <label for="comp-budget">Portfolio Budget <span class="label-hint">(optional)</span></label>
+          <input type="number" id="comp-budget" placeholder="e.g., 1000" min="1" step="1">
+          <p class="budget-setting-hint">Set a virtual budget that participants must stay within. Leave blank for no limit.</p>
+        </div>
+        
         <div class="form-actions">
           <button type="button" id="cancel-create" class="btn btn-secondary">Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>
@@ -87,11 +94,13 @@
         </div>
         <div class="form-group">
           <label>Build Your Portfolio</label>
-          <p class="budget-hint">You have <strong>$1,000</strong> to invest. Enter the number of shares for each stock.</p>
-          <div class="budget-tracker">
+          <p id="join-budget-hint" class="budget-hint hidden">You have <strong id="join-budget-amount">$1,000</strong> to invest. Enter the number of shares for each stock.</p>
+          <p id="join-no-budget-hint" class="budget-hint">Enter your stock picks with the number of shares for each.</p>
+          <div id="join-budget-tracker" class="budget-tracker hidden">
             <span>Budget Used: </span>
             <span id="budget-used" class="budget-amount">$0.00</span>
-            <span> / $1,000</span>
+            <span> / </span>
+            <span id="budget-total">$1,000</span>
             <span id="budget-status" class="budget-status"></span>
           </div>
           <div id="portfolio-tickers" class="portfolio-tickers">
@@ -119,11 +128,13 @@
         <input type="hidden" id="edit-participant-id">
         <div class="form-group">
           <label>Update Your Portfolio</label>
-          <p class="budget-hint">You have <strong>$1,000</strong> to invest. Enter the number of shares for each stock.</p>
-          <div class="budget-tracker">
+          <p id="edit-budget-hint" class="budget-hint hidden">You have <strong id="edit-budget-amount">$1,000</strong> to invest. Enter the number of shares for each stock.</p>
+          <p id="edit-no-budget-hint" class="budget-hint">Update your stock picks with the number of shares for each.</p>
+          <div id="edit-budget-tracker" class="budget-tracker hidden">
             <span>Budget Used: </span>
             <span id="edit-budget-used" class="budget-amount">$0.00</span>
-            <span> / $1,000</span>
+            <span> / </span>
+            <span id="edit-budget-total">$1,000</span>
             <span id="edit-budget-status" class="budget-status"></span>
           </div>
           <div id="edit-portfolio-tickers" class="portfolio-tickers">

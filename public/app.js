@@ -1,7 +1,8 @@
 // ABOUTME: Frontend JavaScript for stock-picker-madness
 // ABOUTME: Handles UI interactions, API calls, and URL-based navigation
 
-const VIRTUAL_BUDGET = 1000;
+// Current competition's budget (null = no limit)
+let currentCompetitionBudget = null;
 
 // Price cache for budget calculation
 const priceCache = new Map();
@@ -450,7 +451,29 @@ function hideCreateModal() {
 	document.getElementById("create-form").reset();
 }
 
-function showJoinModal() {
+function showJoinModal(budget) {
+	// Store the competition budget
+	currentCompetitionBudget = budget;
+
+	// Update budget UI elements based on whether budget exists
+	const budgetHint = document.getElementById("join-budget-hint");
+	const noBudgetHint = document.getElementById("join-no-budget-hint");
+	const budgetTracker = document.getElementById("join-budget-tracker");
+	const budgetAmountEl = document.getElementById("join-budget-amount");
+	const budgetTotalEl = document.getElementById("budget-total");
+
+	if (budget) {
+		budgetHint.classList.remove("hidden");
+		noBudgetHint.classList.add("hidden");
+		budgetTracker.classList.remove("hidden");
+		budgetAmountEl.textContent = `$${budget.toLocaleString()}`;
+		budgetTotalEl.textContent = `$${budget.toLocaleString()}`;
+	} else {
+		budgetHint.classList.add("hidden");
+		noBudgetHint.classList.remove("hidden");
+		budgetTracker.classList.add("hidden");
+	}
+
 	// Reset to single ticker input with shares
 	const container = document.getElementById("portfolio-tickers");
 	container.innerHTML = `
@@ -461,7 +484,9 @@ function showJoinModal() {
 		</div>
 	`;
 	updateRemoveButtons(container);
-	updateBudgetDisplay("portfolio-tickers", "budget-used", "budget-status");
+	if (budget) {
+		updateBudgetDisplay("portfolio-tickers", "budget-used", "budget-status");
+	}
 	joinModal.classList.remove("hidden");
 }
 
@@ -469,10 +494,33 @@ function hideJoinModal() {
 	joinModal.classList.add("hidden");
 	document.getElementById("join-form").reset();
 	priceCache.clear();
+	currentCompetitionBudget = null;
 }
 
-function showEditModal(participantId, portfolioStocks) {
+function showEditModal(participantId, portfolioStocks, budget) {
+	// Store the competition budget
+	currentCompetitionBudget = budget;
+
 	document.getElementById("edit-participant-id").value = participantId;
+
+	// Update budget UI elements based on whether budget exists
+	const budgetHint = document.getElementById("edit-budget-hint");
+	const noBudgetHint = document.getElementById("edit-no-budget-hint");
+	const budgetTracker = document.getElementById("edit-budget-tracker");
+	const budgetAmountEl = document.getElementById("edit-budget-amount");
+	const budgetTotalEl = document.getElementById("edit-budget-total");
+
+	if (budget) {
+		budgetHint.classList.remove("hidden");
+		noBudgetHint.classList.add("hidden");
+		budgetTracker.classList.remove("hidden");
+		budgetAmountEl.textContent = `$${budget.toLocaleString()}`;
+		budgetTotalEl.textContent = `$${budget.toLocaleString()}`;
+	} else {
+		budgetHint.classList.add("hidden");
+		noBudgetHint.classList.remove("hidden");
+		budgetTracker.classList.add("hidden");
+	}
 
 	// portfolioStocks can be array of objects with ticker and shares, or just tickers
 	const container = document.getElementById("edit-portfolio-tickers");
@@ -493,17 +541,20 @@ function showEditModal(participantId, portfolioStocks) {
 		.join("");
 
 	updateRemoveButtons(container);
-	updateBudgetDisplay(
-		"edit-portfolio-tickers",
-		"edit-budget-used",
-		"edit-budget-status",
-	);
+	if (budget) {
+		updateBudgetDisplay(
+			"edit-portfolio-tickers",
+			"edit-budget-used",
+			"edit-budget-status",
+		);
+	}
 	editModal.classList.remove("hidden");
 }
 
 function hideEditModal() {
 	editModal.classList.add("hidden");
 	document.getElementById("edit-form").reset();
+	currentCompetitionBudget = null;
 }
 
 // Portfolio ticker management helpers

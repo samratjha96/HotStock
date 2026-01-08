@@ -74,7 +74,7 @@ header p {
 
 /* === MAIN CONTAINER === */
 main {
-	max-width: 800px;
+	max-width: 1100px;
 	margin: 0 auto;
 	padding: 1.5rem 1rem;
 }
@@ -228,13 +228,13 @@ main {
 .competition-detail-header {
 	background: var(--bg-card);
 	border-radius: var(--radius-lg);
-	padding: 1.25rem;
-	margin-bottom: 1rem;
+	padding: 1.5rem;
+	margin-bottom: 1.25rem;
 	border: 1px solid var(--border);
 }
 
 .competition-detail-header h2 {
-	font-size: 1.25rem;
+	font-size: 1.5rem;
 	font-weight: 600;
 	color: var(--text);
 	margin-bottom: 0.5rem;
@@ -294,17 +294,17 @@ main {
 .participants-section {
 	background: var(--bg-card);
 	border-radius: var(--radius-lg);
-	padding: 1.25rem;
+	padding: 1.5rem;
 	border: 1px solid var(--border);
 	overflow-x: auto;
 	-webkit-overflow-scrolling: touch;
 }
 
 .participants-section h3 {
-	font-size: 0.85rem;
+	font-size: 0.9rem;
 	font-weight: 600;
 	color: var(--text-secondary);
-	margin-bottom: 0.75rem;
+	margin-bottom: 1rem;
 	display: flex;
 	align-items: center;
 	gap: 0.4rem;
@@ -320,12 +320,12 @@ main {
 .participants-table {
 	width: 100%;
 	border-collapse: collapse;
-	font-size: 0.875rem;
+	font-size: 0.95rem;
 }
 
 .participants-table th,
 .participants-table td {
-	padding: 0.6rem 0.5rem;
+	padding: 0.75rem 1rem;
 	text-align: left;
 }
 
@@ -362,7 +362,7 @@ main {
 .participants-table td:first-child {
 	font-weight: 600;
 	color: var(--text-muted);
-	width: 40px;
+	width: 60px;
 }
 
 .rank-cell {
@@ -410,9 +410,9 @@ main {
 	font-weight: 600;
 	color: var(--primary);
 	background: var(--border-light);
-	padding: 0.15rem 0.4rem;
+	padding: 0.2rem 0.5rem;
 	border-radius: 4px;
-	font-size: 0.8rem;
+	font-size: 0.85rem;
 }
 
 /* === MODALS === */
@@ -919,4 +919,22 @@ input:focus-visible {
 	color: var(--text-muted);
 	font-weight: 400;
 	margin-left: 0.15rem;
+}
+
+/* Budget setting in create competition form */
+.budget-setting {
+	border-top: 1px solid var(--border-light);
+	padding-top: 0.75rem;
+	margin-top: 0.5rem;
+}
+
+.budget-setting input {
+	max-width: 150px;
+}
+
+.budget-setting-hint {
+	color: var(--text-muted);
+	font-size: 0.75rem;
+	margin-top: 0.35rem;
+	line-height: 1.4;
 }
