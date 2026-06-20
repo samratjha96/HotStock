@@ -120,7 +120,7 @@ No build step required. Changes to these files are immediately reflected.
 
 ## Deploying to Production
 
-The app is deployed on `homelab-cloud` at https://hotstock.techbrohomelab.xyz
+The app is deployed on `homelab-cloud` at https://hotstock.bootloop.cc
 
 To deploy changes to production:
 ```bash
